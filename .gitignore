@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+wellness_env/
+
+# Environment and secrets
+.env
+.env.*
+*.json
+!package*.json
+!tsconfig*.json
+!vite.config.js
+!eslint.config.js
+!index.html
+!README.md
+
+# Google credentials
+gcp-key.json
+
+# Node / frontend
+wellness-frontend/node_modules/
+wellness-frontend/dist/
+wellness-frontend/.vite/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
