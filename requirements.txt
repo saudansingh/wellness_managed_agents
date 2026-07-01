@@ -1,0 +1,9 @@
+google-cloud-aiplatform>=1.112.0
+langchain-google-vertexai
+langgraph
+fastapi
+uvicorn
+google-api-python-client
+beautifulsoup4
+requests
+psycopg2-binary
