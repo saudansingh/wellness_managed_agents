@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
 from langchain_core.tools import tool
+from google import genai
 
 # ---------------------------------------------------------
 # Authentication Configuration
@@ -10,6 +11,7 @@ from langchain_core.tools import tool
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "YOUR_YOUTUBE_API_KEY")
 GOOGLE_SEARCH_API_KEY = os.getenv("GOOGLE_SEARCH_API_KEY", "YOUR_GOOGLE_SEARCH_API_KEY")
 GOOGLE_CX = os.getenv("GOOGLE_CX", "YOUR_CUSTOM_SEARCH_ENGINE_ID")
+API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_SEARCH_API_KEY")
 
 # =========================================================
 # TOOL 1: YouTube Search Tool (Optimized for Speed)
@@ -41,7 +43,6 @@ def search_youtube_videos(query: str, max_results: int = 2) -> str:
             title = item["snippet"]["title"]
             video_id = item["id"]["videoId"]
             video_url = f"https://www.youtube.com/watch?v={video_id}"
-            # Return raw attributes so the LLM doesn't fight pre-formatted text strings
             video_results.append(f"VIDEO_TITLE: {title} | VIDEO_URL: {video_url}")
             
         if not video_results:
@@ -84,7 +85,6 @@ def search_and_scrape_recipe(query: str) -> str:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
-        # Lowered connection timeout to 4 seconds to prevent stalling the user response if a blog is slow
         page_response = requests.get(target_link, headers=headers, timeout=4)
         
         if page_response.status_code != 200:
@@ -92,18 +92,19 @@ def search_and_scrape_recipe(query: str) -> str:
             
         soup = BeautifulSoup(page_response.text, "html.parser")
         
-        # Aggressively remove junk tags to keep context windows small and processing fast
         for element in soup(["script", "style", "nav", "footer", "header", "aside", "form", "iframe"]):
             element.decompose()
             
         text_blocks = []
         for tag in soup.find_all(['p', 'li', 'h1', 'h2', 'h3']):
             text = tag.get_text().strip()
-            if len(text) > 30:  # Increase character noise filter threshold
+            if len(text) > 30:
                 text_blocks.append(text)
                 
-        # Limit context size to 2500 characters—more than enough for Gemini 2.5 Flash to pull ingredient rules
-        scraped_body = "\n".join(text_blocks)[:2500]
+        raw_scraped_body = "\n".join(text_blocks)
+        
+        # 🛠️ INTEGRATION: Safely prune the scraped content using token-level constraints before returning
+        scraped_body = dynamic_token_chunker(raw_scraped_body, max_tokens=1200)
         
         output = (
             f"SOURCE_WEBSITE: {site_title}\n"
@@ -114,3 +115,35 @@ def search_and_scrape_recipe(query: str) -> str:
         
     except Exception as e:
         return f"Error executing recipe scraper tool: {str(e)}"
+    
+def dynamic_token_chunker(raw_text: str, model_name: str = "gemini-2.5-flash", max_tokens: int = 1500) -> str:
+    """
+    Safely counts and trims strings down to strict structural token allocations using modern google-genai APIs.
+    """
+    if not API_KEY:
+        return raw_text[:2000] # Fallback to rough character slice if API keys are decoupled
+        
+    try:
+        # Corrected modern client initialization
+        client = genai.Client(api_key=API_KEY)
+        sentences = raw_text.split(". ")
+        current_chunk = []
+        
+        for sentence in sentences:
+            test_string = ". ".join(current_chunk + [sentence])
+            
+            # Correct client-side API model call syntax standard
+            response = client.models.count_tokens(
+                model=model_name,
+                contents=test_string,
+            )
+            token_count = response.total_tokens
+            
+            if token_count < max_tokens:
+                current_chunk.append(sentence)
+            else:
+                break 
+                
+        return ". ".join(current_chunk)
+    except Exception:
+        return raw_text[:2000] # Safe fallback string escape block

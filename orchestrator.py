@@ -1,4 +1,4 @@
-from typing import TypedDict, Optional, List
+from typing import TypedDict, Union, Optional, List, Any
 from langgraph.graph import StateGraph, START, END
 
 # Import the specialist agent functions and models cleanly
@@ -25,6 +25,7 @@ class WellnessState(TypedDict):
     workout_plan: Optional[str]
     yoga_plan: Optional[str]
     diet_plan: Optional[str]
+    loop_counter: int
     
     safety_status: Optional[str]
     final_output: Optional[str]
@@ -39,14 +40,16 @@ def initialize_workflow_node(state: WellnessState) -> dict:
     current_max_week = get_last_week_number(user_id)
     next_week = current_max_week + 1
     
-    # 🛠️ FIX: We now explicitly initialize all text values to empty strings.
-    # This guarantees that if an agent is skipped, the state graph won't crash on a missing key!
+    # Safely track current loop iterations
+    current_loops = state.get("loop_counter", 0)
+    
     return {
         "user_profile": profile_str,
         "week_number": next_week,
-        "workout_plan": "",
-        "yoga_plan": "",
-        "diet_plan": "",
+        "workout_plan": state.get("workout_plan", ""),
+        "yoga_plan": state.get("yoga_plan", ""),
+        "diet_plan": state.get("diet_plan", ""),
+        "loop_counter": current_loops + 1, # Track loop cycles accurately
         "safety_status": "",
         "final_output": ""
     }
@@ -111,8 +114,6 @@ def dietitian_node(state: WellnessState) -> dict:
     diet = run_dietitian_agent(state["user_profile"], state["user_message"], workload)
     return {"diet_plan": diet}
 
-# Locate these two functions in orchestrator.py and swap them out:
-
 def safety_audit_node(state: WellnessState) -> dict:
     print("🛡️ [Agent] Safety Auditor evaluating plan safety parameters...")
     
@@ -125,22 +126,9 @@ def safety_audit_node(state: WellnessState) -> dict:
         combined_plan += f"{state['diet_plan']}\n\n"
         
     audit_result = run_safety_agent(state["user_profile"], combined_plan)
-    
-    # TELEMETRY LOG: This lets you see the exact raw text output from Gemini in your terminal
     print(f"🔍 [Safety Auditor Output Raw]: '{audit_result}'")
     
     return {"safety_status": audit_result.strip()}
-
-def evaluate_safety_gate(state: WellnessState) -> str:
-    status = state.get("safety_status", "").upper()
-    
-    # Strict matching to prevent accidental false positives
-    if "CRITICAL REJECTION" in status:
-        print("❌ [Safety Gate] Plan REJECTED by auditor. Redirecting to medical disclaimer.")
-        return "handle_medical_refusal"
-        
-    print("✅ [Safety Gate] Plan PASSED compliance audit. Finalizing layout output.")
-    return "finalize_and_save"
 
 def handle_medical_refusal_node(state: WellnessState) -> dict:
     disclaimer = (
@@ -177,13 +165,20 @@ def finalize_and_save_node(state: WellnessState) -> dict:
 # 3. Conditional Routing Logic Functions
 # =========================================================
 
-def route_to_agents(state: WellnessState) -> List[str]:
+def route_to_agents(state: WellnessState) -> Union[str, List[str]]:
     """Determines which agent paths to follow out of the intent_analyzer node."""
+    # 1. Catch infinite recursive execution loops immediately
+    if state.get("loop_counter", 0) > 3:
+        print("🚨 [Circuit Breaker] Loop counter exceeded limits! Forcing fallback safety refusal.")
+        return "handle_medical_refusal"
+    
+    # 2. Otherwise return standard arrays
     return state["required_agents"]
 
 def evaluate_safety_gate(state: WellnessState) -> str:
     """Evaluates whether the safety audit passed or requires a medical disclaimer."""
-    if "CRITICAL REJECTION" in state.get("safety_status", "").upper():
+    status = state.get("safety_status", "").upper()
+    if "CRITICAL REJECTION" in status:
         print("❌ [Safety Gate] Plan REJECTED by auditor. Redirecting to medical disclaimer.")
         return "handle_medical_refusal"
     print("✅ [Safety Gate] Plan PASSED compliance audit. Finalizing layout output.")
@@ -208,14 +203,15 @@ workflow.add_node("finalize_and_save", finalize_and_save_node)
 workflow.add_edge(START, "initialize")
 workflow.add_edge("initialize", "intent_analyzer")
 
-# Parallel fan-out conditional routing block matching the active node name
+# Parallel routing conditional configuration
 workflow.add_conditional_edges(
     "intent_analyzer",
     route_to_agents,
     {
         "trainer": "trainer",
         "yogi": "yogi",
-        "dietitian": "dietitian"
+        "dietitian": "dietitian",
+        "handle_medical_refusal": "handle_medical_refusal" # Explicitly mapped to support circuit breaker exit path!
     }
 )
 
@@ -241,6 +237,11 @@ workflow.add_edge("finalize_and_save", END)
 wellness_orchestrator = workflow.compile()
 
 def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
-    initial_inputs = {"user_id": user_id, "user_message": user_message, "required_agents": []}
+    initial_inputs = {
+        "user_id": user_id, 
+        "user_message": user_message, 
+        "required_agents": [],
+        "loop_counter": 0 # Explicit initialization
+    }
     final_state = wellness_orchestrator.invoke(initial_inputs)
     return final_state["final_output"]

@@ -1,12 +1,10 @@
-# =========================================================
-# CRITICAL: LOAD ENVIRONMENT VARIABLES BEFORE MODULE IMPORTS
-# =========================================================
-
-
 import traceback
 import os
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-load_dotenv()  # Injects environment values into runtime memory before local imports execute
+
+# Injects environment values into runtime memory before local imports execute
+load_dotenv()  
 
 from orchestrator import execute_wellness_orchestration
 import uvicorn
@@ -19,12 +17,22 @@ from typing import Optional
 from database import initialize_database, save_user_profile, get_user_profile_string
 
 # =========================================================
-# 1. Initialize FastAPI Application & CORS
+# 1. Initialize FastAPI Application & Lifespan Architecture
 # =========================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup Events
+    print("🚀 Starting API Server and initializing cloud databases...")
+    initialize_database()
+    yield
+    # Shutdown Events (Can be left blank or used to close pool connections)
+    print("🛑 Shutting down API Server cleanly...")
+
 app = FastAPI(
     title="Managed Wellness Multi-Agent Platform API",
     description="Enterprise backend powering orchestrated fitness, yoga, and nutrition generation.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -34,11 +42,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.on_event("startup")
-def on_startup():
-    print("🚀 Starting API Server and initializing cloud databases...")
-    initialize_database()
 
 # =========================================================
 # 2. Define Pydantic Input Data Models
@@ -89,8 +92,10 @@ def generate_wellness_plan(payload: ChatModel):
         )
         
     try:
-        current_key = os.environ.get("GOOGLE_API_KEY", "NOT_FOUND")
-        print(f"\n DEBUG: The API Key being used starts with: {current_key[:15]}...\n")
+        current_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_SEARCH_API_KEY") or "NOT_FOUND"
+        key_trace = current_key[:15] if len(current_key) > 15 else "INVALID_KEY_LENGTH"
+        print(f"\n DEBUG: The API Key being used starts with: {key_trace}...\n")
+        
         final_markdown_plan = execute_wellness_orchestration(
             user_id=payload.user_id,
             user_message=payload.user_message

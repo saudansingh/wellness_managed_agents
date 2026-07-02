@@ -7,11 +7,12 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState('Orchestrating agents...');
   const chatEndRef = useRef(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isLoading]);
 
   const handleOnboardingSubmit = async (e) => {
     e.preventDefault();
@@ -20,8 +21,8 @@ export default function App() {
       return;
     }
     setIsLoading(true);
+    setLoadingStatus("Synchronizing profile vectors...");
     try {
-      // Synchronize with your backend endpoint to save user state
       await fetch('http://127.0.0.1:8000/api/save-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -48,8 +49,17 @@ export default function App() {
     setMessages(prev => [...prev, { sender: 'user', text: userMessage }]);
     setIsLoading(true);
 
+    // Dynamic Telemetry Agent Updates
+    const textLower = userMessage.toLowerCase();
+    if (textLower.includes('diet') || textLower.includes('eat') || textLower.includes('weight') || textLower.includes('calorie')) {
+      setLoadingStatus('🥗 Clinical Sports Dietitian is analyzing macro architecture...');
+    } else if (textLower.includes('yoga') || textLower.includes('stretch') || textLower.includes('asana')) {
+      setLoadingStatus('🧘 Yoga Therapist is aligning posture variations & sequencing...');
+    } else {
+      setLoadingStatus('🏋️ Personal Trainer is building performance prescription metrics...');
+    }
+
     try {
-      // POST request to your Python orchestration router
       const response = await fetch('http://127.0.0.1:8000/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -118,24 +128,38 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-6 space-y-4 max-w-3xl w-full mx-auto">
-        {messages.map((msg, index) => (
-          <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-xl rounded-2xl px-4 py-3 shadow-sm ${
-              msg.sender === 'user' ? 'bg-emerald-600 text-white rounded-br-none' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
-            }`}>
-              {/* NEW FIXED CODE */}
-            <div className="markdown-content text-sm space-y-2 leading-relaxed">
-              <ReactMarkdown>{msg.text}</ReactMarkdown>
-            </div>
-            </div>
-          </div>
-        ))}
+        
+{messages.map((msg, index) => (
+  <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+    <div className={`max-w-xl rounded-2xl px-4 py-3 shadow-sm ${
+      msg.sender === 'user' 
+        ? 'bg-emerald-600 text-white rounded-br-none shadow-emerald-900/20' 
+        : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
+    }`}>
+      <div className="markdown-content text-sm space-y-2 leading-relaxed">
+        {msg.sender === 'user' ? (
+          // 🛠️ FIX: Direct hardcoded bold tag rendering for all user questions
+          <strong className="block text-base font-extrabold tracking-wide text-white">
+            {msg.text}
+          </strong>
+        ) : (
+          <ReactMarkdown>{msg.text}</ReactMarkdown>
+        )}
+      </div>
+    </div>
+  </div>
+))}
+        
+        {/* Dynamic Telemetry Status Loader */}
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-bl-none px-4 py-3 text-slate-500 flex space-x-1.5 items-center">
-              <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          <div className="flex justify-start transition-all duration-300 ease-in-out">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-bl-none px-4 py-3 text-slate-300 flex items-center space-x-3 shadow-md border-dashed border-emerald-500/30">
+              <div className="flex space-x-1 items-center">
+                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span className="text-xs font-medium text-slate-400 tracking-wide animate-pulse">{loadingStatus}</span>
             </div>
           </div>
         )}
