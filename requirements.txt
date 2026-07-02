@@ -9,3 +9,8 @@ google-api-python-client
 beautifulsoup4
 requests
 psycopg2-binary
+python-dotenv
+langchain-core
+beautifulsoup4
+requests
+pydantic
