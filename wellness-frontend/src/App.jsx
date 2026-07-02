@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 export default function App() {
+  const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
   const [screen, setScreen] = useState('onboarding');
   const [profile, setProfile] = useState({ userId: '', age: '', weight: '', injuries: 'None', goals: '' });
   const [messages, setMessages] = useState([]);
@@ -23,7 +24,7 @@ export default function App() {
     setIsLoading(true);
     setLoadingStatus("Synchronizing profile vectors...");
     try {
-      await fetch('http://127.0.0.1:8000/api/save-profile', {
+     await fetch(`${BACKEND_URL}/api/save-profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(profile),
@@ -60,7 +61,7 @@ export default function App() {
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/chat', {
+      const response = await fetch(`${BACKEND_URL}/api/save-profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
