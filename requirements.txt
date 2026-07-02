@@ -1,6 +1,6 @@
 google-cloud-aiplatform>=1.112.0
-google-generativeai
-langchain-google-vertexai
+google-genai
+langchain-google-genai
 langchain-groq
 langgraph
 fastapi
