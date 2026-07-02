@@ -7,5 +7,6 @@ google-api-python-client
 google-genai
 langchain-core
 langchain-google-genai
+langchain-groq
 langgraph
 python-dotenv
