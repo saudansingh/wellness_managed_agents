@@ -22,4 +22,4 @@ COPY . .
 EXPOSE 8080
 
 # Run uvicorn binding to 0.0.0.0 and the port provided by Cloud Run
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT}
