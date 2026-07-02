@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 export default function App() {
-  const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+  const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://wellness-managed-agents-git-436702918308.asia-south1.run.app';
   const [screen, setScreen] = useState('onboarding');
   const [profile, setProfile] = useState({ userId: '', age: '', weight: '', injuries: 'None', goals: '' });
   const [messages, setMessages] = useState([]);
@@ -24,7 +24,7 @@ export default function App() {
     setIsLoading(true);
     setLoadingStatus("Synchronizing profile vectors...");
     try {
-     await fetch(`${BACKEND_URL}/api/save-profile`, {
+      await fetch(`${BACKEND_URL}/api/save-profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(profile),
@@ -34,7 +34,8 @@ export default function App() {
       setScreen('chat');
     } catch (error) {
       console.error("Backend unreachable, entering preview mode.", error);
-      setMessages([{ sender: 'ai', text: `⚠️ **Running in local bypass mode.** (Backend at 127.0.0.1:8000 was offline). Feel free to test the interface layout!` }]);
+      // 🛠️ FIX: Dynamic error message string tracking target environment
+      setMessages([{ sender: 'ai', text: `⚠️ **Running in local bypass mode.** (Backend at ${BACKEND_URL} was offline). Feel free to test the interface layout!` }]);
       setScreen('chat');
     } finally {
       setIsLoading(false);
@@ -50,7 +51,6 @@ export default function App() {
     setMessages(prev => [...prev, { sender: 'user', text: userMessage }]);
     setIsLoading(true);
 
-    // Dynamic Telemetry Agent Updates
     const textLower = userMessage.toLowerCase();
     if (textLower.includes('diet') || textLower.includes('eat') || textLower.includes('weight') || textLower.includes('calorie')) {
       setLoadingStatus('🥗 Clinical Sports Dietitian is analyzing macro architecture...');
@@ -61,7 +61,8 @@ export default function App() {
     }
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/save-profile`, {
+      // 🛠️ FIX: Target endpoint switched to /api/chat instead of duplicating save-profile
+      const response = await fetch(`${BACKEND_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -72,7 +73,8 @@ export default function App() {
       const data = await response.json();
       setMessages(prev => [...prev, { sender: 'ai', text: data.plan_markdown }]);
     } catch (error) {
-      setMessages(prev => [...prev, { sender: 'ai', text: "❌ Connection error. Is your Uvicorn server running on port 8000?" }]);
+      // 🛠️ FIX: Dynamic execution context trace parameter
+      setMessages(prev => [...prev, { sender: 'ai', text: `❌ Connection error. Failed connection attempt to endpoint: ${BACKEND_URL}/api/chat` }]);
     } finally {
       setIsLoading(false);
     }
@@ -129,29 +131,26 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-y-auto p-6 space-y-4 max-w-3xl w-full mx-auto">
+        {messages.map((msg, index) => (
+          <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-xl rounded-2xl px-4 py-3 shadow-sm ${
+              msg.sender === 'user' 
+                ? 'bg-emerald-600 text-white rounded-br-none shadow-emerald-900/20' 
+                : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
+            }`}>
+              <div className="markdown-content text-sm space-y-2 leading-relaxed">
+                {msg.sender === 'user' ? (
+                  <strong className="block text-base font-extrabold tracking-wide text-white">
+                    {msg.text}
+                  </strong>
+                ) : (
+                  <ReactMarkdown>{msg.text}</ReactMarkdown>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
         
-{messages.map((msg, index) => (
-  <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-    <div className={`max-w-xl rounded-2xl px-4 py-3 shadow-sm ${
-      msg.sender === 'user' 
-        ? 'bg-emerald-600 text-white rounded-br-none shadow-emerald-900/20' 
-        : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
-    }`}>
-      <div className="markdown-content text-sm space-y-2 leading-relaxed">
-        {msg.sender === 'user' ? (
-          // 🛠️ FIX: Direct hardcoded bold tag rendering for all user questions
-          <strong className="block text-base font-extrabold tracking-wide text-white">
-            {msg.text}
-          </strong>
-        ) : (
-          <ReactMarkdown>{msg.text}</ReactMarkdown>
-        )}
-      </div>
-    </div>
-  </div>
-))}
-        
-        {/* Dynamic Telemetry Status Loader */}
         {isLoading && (
           <div className="flex justify-start transition-all duration-300 ease-in-out">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-bl-none px-4 py-3 text-slate-300 flex items-center space-x-3 shadow-md border-dashed border-emerald-500/30">
