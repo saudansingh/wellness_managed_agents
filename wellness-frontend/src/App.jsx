@@ -60,31 +60,21 @@ export default function App() {
   };
 
   const handleSendMessage = async (e) => {
-  if (!input.trim() || isLoading) return;
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
 
-  const userMessage = input;
-  setInput('');
-  setMessages(prev => [...prev, { sender: 'user', text: userMessage }]);
-  setIsLoading(true);
+    const userMessage = input;
+    setInput('');
+    setMessages(prev => [...prev, { sender: 'user', text: userMessage }]);
+    setIsLoading(true);
 
-  // 🌟 FIX: Check for casual phrases FIRST so it doesn't show the Trainer text!
-  const textLower = userMessage.toLowerCase().strip();
-  const casualPhrases = ['hey', 'hi', 'hello', 'got it', 'ok', 'robot', 'who are you', 'thank you', 'thanks'];
-  const isCasual = casualPhrases.some(phrase => textLower.includes(phrase));
+    const textLower = userMessage.toLowerCase().trim();
+    const casualPhrases = ['hey', 'hi', 'hello', 'got it', 'ok', 'robot', 'who are you', 'thank you', 'thanks'];
+    const isCasual = casualPhrases.some(phrase => textLower.includes(phrase));
 
-  if (isCasual) {
-    setLoadingStatus('💬 Connecting to Core Matrix...');
-  } else if (textLower.includes('diet') || textLower.includes('eat') || textLower.includes('calorie')) {
-    setLoadingStatus('🥗 Clinical Sports Dietitian compiling macros...');
-  } else if (textLower.includes('yoga') || textLower.includes('stretch') || textLower.includes('back')) {
-    setLoadingStatus('🧘 Yoga Therapist optimizing posture alignment...');
-  } else {
-    setLoadingStatus('🏋️ Personal Trainer configuring sets and reps...');
-  }
-
-  // ... rest of your existing fetch request code stays exactly the same
-    const textLower = userMessage.toLowerCase();
-    if (textLower.includes('diet') || textLower.includes('eat') || textLower.includes('calorie')) {
+    if (isCasual) {
+      setLoadingStatus('💬 Connecting to Core Matrix...');
+    } else if (textLower.includes('diet') || textLower.includes('eat') || textLower.includes('calorie')) {
       setLoadingStatus('🥗 Clinical Sports Dietitian compiling macros...');
     } else if (textLower.includes('yoga') || textLower.includes('stretch') || textLower.includes('back')) {
       setLoadingStatus('🧘 Yoga Therapist optimizing posture alignment...');
