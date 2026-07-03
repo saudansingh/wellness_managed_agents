@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import './index.css';
 
 export default function App() {
   const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://wellness-managed-agents-git-436702918308.asia-south1.run.app';
@@ -81,75 +82,121 @@ export default function App() {
   };
 
   if (screen === 'onboarding') {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-white font-sans">
-        <div className="bg-slate-800 p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-700">
-          <h2 className="text-2xl font-bold text-center mb-2">📋 Setup Your Profile</h2>
-          <p className="text-slate-400 text-sm text-center mb-6">Let's gather your metrics to tailor your responses.</p>
-          <form onSubmit={handleOnboardingSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">User ID / Name</label>
-              <input type="text" required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-emerald-500" placeholder="e.g. ankur" value={profile.userId} onChange={e => setProfile({...profile, userId: e.target.value})} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">Age</label>
-                <input type="number" required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-emerald-500" placeholder="24" value={profile.age} onChange={e => setProfile({...profile, age: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">Weight (KG)</label>
-                <input type="number" required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-emerald-500" placeholder="61" value={profile.weight} onChange={e => setProfile({...profile, weight: e.target.value})} />
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">Injuries / Conditions</label>
-              <input type="text" className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-emerald-500" placeholder="e.g. none, knee pain" value={profile.injuries} onChange={e => setProfile({...profile, injuries: e.target.value})} />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-400 mb-1">Goals</label>
-              <textarea className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white h-20 resize-none focus:outline-none focus:border-emerald-500" placeholder="What are you trying to achieve?" value={profile.goals} onChange={e => setProfile({...profile, goals: e.target.value})} />
-            </div>
-            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 transition-colors text-white font-semibold p-3 rounded-lg shadow-md mt-2">
-              Start Conversation
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 font-sans">
-      <header className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-md">
-        <div className="flex items-center space-x-3">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <h1 className="font-bold text-base tracking-wide">Wellness Assistant</h1>
-        </div>
-        <span className="text-xs bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700 text-slate-400">
-          User Context: <b className="text-emerald-400">{profile.userId}</b>
-        </span>
-      </header>
+    <div className="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black flex items-center justify-center p-4 text-white font-sans selection:bg-emerald-500/30">
+      
+      {/* Container Card with subtle backdrop blur and neon emerald borders */}
+      <div className="relative bg-slate-900/60 backdrop-blur-xl p-8 rounded-3xl shadow-2xl w-full max-w-lg border border-slate-800 hover:border-slate-700/80 transition-all duration-500">
+        
+        {/* Glow Effects */}
+        <div className="absolute -top-12 -left-12 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-12 -right-12 w-40 h-40 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      <main className="flex-1 overflow-y-auto p-6 space-y-4 max-w-3xl w-full mx-auto">
-        {messages.map((msg, index) => (
-          <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-xl rounded-2xl px-4 py-3 shadow-sm ${
-              msg.sender === 'user' 
-                ? 'bg-emerald-600 text-white rounded-br-none shadow-emerald-900/20' 
-                : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
-            }`}>
-              <div className="markdown-content text-sm space-y-2 leading-relaxed">
-                {msg.sender === 'user' ? (
-                  <strong className="block text-base font-extrabold tracking-wide text-white">
-                    {msg.text}
-                  </strong>
-                ) : (
-                  <ReactMarkdown>{msg.text}</ReactMarkdown>
-                )}
-              </div>
+        {/* Decorative Top Accent Line */}
+        <div className="absolute top-0 left-1/4 right-1/4 h-[2px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent" />
+
+        {/* Header Block */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-2xl mb-4 shadow-inner shadow-emerald-500/10">
+            🧬
+          </div>
+          <h2 className="text-3xl font-black tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+            Setup Your Engine
+          </h2>
+          <p className="text-slate-400 text-sm max-w-xs mx-auto mt-2 leading-relaxed">
+            Let's gather your vitals to synchronize the multi-agent wellness lattice.
+          </p>
+        </div>
+
+        {/* Interactive Form */}
+        <form onSubmit={handleOnboardingSubmit} className="space-y-5">
+          
+          {/* User ID / Name */}
+          <div className="group relative">
+            <label className="block text-[11px] font-bold tracking-wider uppercase text-slate-400 group-focus-within:text-emerald-400 transition-colors mb-1.5 pl-1">
+              User ID / Name
+            </label>
+            <input 
+              type="text" 
+              required 
+              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-inner" 
+              placeholder="e.g. ankur" 
+              value={profile.userId} 
+              onChange={e => setProfile({...profile, userId: e.target.value})} 
+            />
+          </div>
+
+          {/* Grid Layout for Metrics */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="group">
+              <label className="block text-[11px] font-bold tracking-wider uppercase text-slate-400 group-focus-within:text-emerald-400 transition-colors mb-1.5 pl-1">
+                Age
+              </label>
+              <input 
+                type="number" 
+                required 
+                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-inner" 
+                placeholder="24" 
+                value={profile.age} 
+                onChange={e => setProfile({...profile, age: e.target.value})} 
+              />
+            </div>
+            <div className="group">
+              <label className="block text-[11px] font-bold tracking-wider uppercase text-slate-400 group-focus-within:text-emerald-400 transition-colors mb-1.5 pl-1">
+                Weight (KG)
+              </label>
+              <input 
+                type="number" 
+                required 
+                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-inner" 
+                placeholder="61" 
+                value={profile.weight} 
+                onChange={e => setProfile({...profile, weight: e.target.value})} 
+              />
             </div>
           </div>
-        ))}
+
+          {/* Injuries */}
+          <div className="group">
+            <label className="block text-[11px] font-bold tracking-wider uppercase text-slate-400 group-focus-within:text-emerald-400 transition-colors mb-1.5 pl-1">
+              Injuries / Medical Conditions
+            </label>
+            <input 
+              type="text" 
+              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-inner" 
+              placeholder="e.g. none, lower back stiffness" 
+              value={profile.injuries} 
+              onChange={e => setProfile({...profile, injuries: e.target.value})} 
+            />
+          </div>
+
+          {/* Goals */}
+          <div className="group">
+            <label className="block text-[11px] font-bold tracking-wider uppercase text-slate-400 group-focus-within:text-emerald-400 transition-colors mb-1.5 pl-1">
+              Primary Wellness Goals
+            </label>
+            <textarea 
+              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-white placeholder-slate-600 h-24 resize-none focus:outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-inner leading-relaxed" 
+              placeholder="What target benchmarks are we trying to optimize?" 
+              value={profile.goals} 
+              onChange={e => setProfile({...profile, goals: e.target.value})} 
+            />
+          </div>
+
+          {/* Premium Animated Call to Action Button */}
+          <button 
+            type="submit" 
+            className="w-full relative group/btn bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-[0.99] transition-all text-white font-bold p-3.5 rounded-xl shadow-lg shadow-emerald-950/40 mt-4 overflow-hidden flex items-center justify-center space-x-2"
+          >
+            <span className="relative z-10">Initialize Agent Mesh</span>
+            <span className="relative z-10 text-lg group-hover/btn:translate-x-1 transition-transform duration-300">⚡</span>
+            <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover/btn:animate-[shimmer_1.5s_infinite]" />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
         
         {isLoading && (
           <div className="flex justify-start transition-all duration-300 ease-in-out">
