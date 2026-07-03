@@ -63,11 +63,12 @@ def intent_analyzer_node(state: WellnessState) -> dict:
     - "trainer" (exercises, gym routines, cardio, weight lifting, muscle building)
     - "yogi" (stretching, mobility, yoga, joint pain relief, flexibility)
     - "dietitian" (food, recipes, macros, calories, diet, weight loss/gain nutrition)
+    - "casual" (general greetings, casual chat, small talk, questions like 'who are you', 'are you a robot', 'ok', 'thank you')
 
-    CRITICAL RULE: Return ONLY a comma-separated list of the exact words needed. Do NOT write sentences. Do not include quotes.
+    CRITICAL RULE: Return ONLY a single word or a comma-separated list of the exact words needed. Do NOT write sentences. Do not include quotes.
     Example 1: dietitian
     Example 2: trainer, dietitian
-    Example 3: yogi
+    Example 3: casual
     
     User Request: "{message}"
     Result:"""
@@ -75,15 +76,37 @@ def intent_analyzer_node(state: WellnessState) -> dict:
     try:
         response = analytical_pro_model.invoke(routing_prompt).content.strip().lower()
         clean_string = response.replace('"', '').replace("'", "").replace(".", "")
-        required = [word.strip() for word in clean_string.split(",") if word.strip() in ["trainer", "yogi", "dietitian"]]
+        required = [word.strip() for word in clean_string.split(",") if word.strip() in ["trainer", "yogi", "dietitian", "casual"]]
     except Exception:
         required = []
         
+    # 🌟 FIX: If nothing matches, default to casual chat instead of forcing a trainer routine!
     if not required:
-        required = ["trainer"]
+        required = ["casual"]
         
     print(f"🧠 [AI Router] User intent detected. Waking up ONLY: {required}")
     return {"required_agents": required}
+
+def casual_chat_node(state: WellnessState) -> dict:
+    if "casual" not in state["required_agents"]:
+        return {}
+        
+    print("💬 [Agent] Casual Chat Agent activated.")
+    
+    chat_prompt = f"""You are a friendly, concise AI Wellness Assistant. 
+    The user is chatting casually with you (saying hello, acknowledging a message, or asking a quick meta-question).
+    
+    Respond directly, naturally, and concisely in 1 to 2 sentences max. 
+    CRITICAL: Do NOT mention exercises, sets, calories, or create any diagnostic plans.
+    
+    User message: {state['user_message']}
+    Response:"""
+    
+    response = analytical_pro_model.invoke(chat_prompt).content.strip()
+    return {"final_output": response}
+
+
+
 
 def trainer_node(state: WellnessState) -> dict:
     if "trainer" not in state["required_agents"]:
@@ -198,6 +221,7 @@ workflow.add_node("dietitian", dietitian_node)
 workflow.add_node("safety_audit", safety_audit_node)
 workflow.add_node("handle_medical_refusal", handle_medical_refusal_node)
 workflow.add_node("finalize_and_save", finalize_and_save_node)
+workflow.add_node("casual_chat", casual_chat_node)
 
 # Set the Entry Point pipeline
 workflow.add_edge(START, "initialize")
