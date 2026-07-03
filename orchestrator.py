@@ -193,12 +193,13 @@ def route_to_agents(state: WellnessState) -> Union[str, List[str]]:
         print("🚨 [Circuit Breaker] Loop counter exceeded limits! Forcing fallback safety refusal.")
         return "handle_medical_refusal"
     
-    # 2. Extract targets
+    # 2. Extract targets safely
     required = state.get("required_agents", [])
     
-    # 🌟 CRITICAL PRIORITY BYPASS: If casual chat is required, route to casual string explicitly
+    # 🌟 FIX: Always wrap the string target inside a list collection!
     if "casual" in required:
-        return "casual"
+        print("🎯 [Router] Routing explicitly to ['casual']")
+        return ["casual"]
         
     return required
 
