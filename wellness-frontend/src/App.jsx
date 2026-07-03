@@ -68,6 +68,20 @@ export default function App() {
     setMessages(prev => [...prev, { sender: 'user', text: userMessage }]);
     setIsLoading(true);
 
+    const textLower = userMessage.toLowerCase().strip();
+    const casualPhrases = ['hey', 'hi', 'hello', 'got it', 'ok', 'robot', 'who are you', 'thank you', 'thanks'];
+    const isCasual = casualPhrases.some(phrase => textLower.includes(phrase));
+  
+    if (isCasual) {
+      setLoadingStatus('💬 Connecting to Core Matrix...');
+    } else if (textLower.includes('diet') || textLower.includes('eat') || textLower.includes('calorie')) {
+      setLoadingStatus('🥗 Clinical Sports Dietitian compiling macros...');
+    } else if (textLower.includes('yoga') || textLower.includes('stretch') || textLower.includes('back')) {
+      setLoadingStatus('🧘 Yoga Therapist optimizing posture alignment...');
+    } else {
+      setLoadingStatus('🏋️ Personal Trainer configuring sets and reps...');
+    }
+
     const textLower = userMessage.toLowerCase();
     if (textLower.includes('diet') || textLower.includes('eat') || textLower.includes('calorie')) {
       setLoadingStatus('🥗 Clinical Sports Dietitian compiling macros...');
