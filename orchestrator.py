@@ -80,7 +80,7 @@ def intent_analyzer_node(state: WellnessState) -> dict:
     except Exception:
         required = []
         
-    # 🌟 FIX: If nothing matches, default to casual chat instead of forcing a trainer routine!
+    # If nothing matches, default to casual chat instead of forcing a trainer routine!
     if not required:
         required = ["casual"]
         
@@ -94,7 +94,7 @@ def casual_chat_node(state: WellnessState) -> dict:
     print("💬 [Agent] Casual Chat Agent activated.")
     
     chat_prompt = f"""You are a friendly, concise AI Wellness Assistant. 
-    The user is chatting casually with you (saying hello, acknowledging a message, or asking a quick meta-question).
+    The user is chatting casually with you (saying hello, acknowledging a message, or asking a quick meta-question like 'are you a robot').
     
     Respond directly, naturally, and concisely in 1 to 2 sentences max. 
     CRITICAL: Do NOT mention exercises, sets, calories, or create any diagnostic plans.
@@ -104,9 +104,6 @@ def casual_chat_node(state: WellnessState) -> dict:
     
     response = analytical_pro_model.invoke(chat_prompt).content.strip()
     return {"final_output": response}
-
-
-
 
 def trainer_node(state: WellnessState) -> dict:
     if "trainer" not in state["required_agents"]:
@@ -144,6 +141,7 @@ def safety_audit_node(state: WellnessState) -> dict:
     if state.get("workout_plan"):
         combined_plan += f"{state['workout_plan']}\n\n"
     if state.get("yoga_plan"):
+        complete_markdown_plan = "" # fallback validation local check 
         combined_plan += f"{state['yoga_plan']}\n\n"
     if state.get("diet_plan"):
         combined_plan += f"{state['diet_plan']}\n\n"
@@ -195,8 +193,14 @@ def route_to_agents(state: WellnessState) -> Union[str, List[str]]:
         print("🚨 [Circuit Breaker] Loop counter exceeded limits! Forcing fallback safety refusal.")
         return "handle_medical_refusal"
     
-    # 2. Otherwise return standard arrays
-    return state["required_agents"]
+    # 2. Extract targets
+    required = state.get("required_agents", [])
+    
+    # 🌟 CRITICAL PRIORITY BYPASS: If casual chat is required, route to casual string explicitly
+    if "casual" in required:
+        return "casual"
+        
+    return required
 
 def evaluate_safety_gate(state: WellnessState) -> str:
     """Evaluates whether the safety audit passed or requires a medical disclaimer."""
@@ -232,10 +236,11 @@ workflow.add_conditional_edges(
     "intent_analyzer",
     route_to_agents,
     {
+        "casual": "casual_chat",       # 🌟 MAP CASUAL STRING TARGET DIRECTLY TO NODE
         "trainer": "trainer",
         "yogi": "yogi",
         "dietitian": "dietitian",
-        "handle_medical_refusal": "handle_medical_refusal" # Explicitly mapped to support circuit breaker exit path!
+        "handle_medical_refusal": "handle_medical_refusal"
     }
 )
 
@@ -258,6 +263,9 @@ workflow.add_conditional_edges(
 workflow.add_edge("handle_medical_refusal", END)
 workflow.add_edge("finalize_and_save", END)
 
+# 🌟 SHORT-CIRCUIT CASUAL TRAFFIC DIRECTLY TO END (Bypasses Safety & DB Saving)
+workflow.add_edge("casual_chat", END)
+
 wellness_orchestrator = workflow.compile()
 
 def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
@@ -265,7 +273,7 @@ def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
         "user_id": user_id, 
         "user_message": user_message, 
         "required_agents": [],
-        "loop_counter": 0 # Explicit initialization
+        "loop_counter": 0 
     }
     final_state = wellness_orchestrator.invoke(initial_inputs)
     return final_state["final_output"]
