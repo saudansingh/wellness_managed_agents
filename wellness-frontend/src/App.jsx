@@ -198,36 +198,4 @@ export default function App() {
   );
 }
         
-        {isLoading && (
-          <div className="flex justify-start transition-all duration-300 ease-in-out">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-bl-none px-4 py-3 text-slate-300 flex items-center space-x-3 shadow-md border-dashed border-emerald-500/30">
-              <div className="flex space-x-1 items-center">
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-              <span className="text-xs font-medium text-slate-400 tracking-wide animate-pulse">{loadingStatus}</span>
-            </div>
-          </div>
-        )}
-        <div ref={chatEndRef} />
-      </main>
-
-      <footer className="bg-slate-900 border-t border-slate-800 p-4">
-        <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto flex items-center space-x-3">
-          <input
-            type="text"
-            value={input}
-            disabled={isLoading}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Type your wellness or diet query here..."
-            className="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
-          />
-          <button type="submit" disabled={isLoading || !input.trim()} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 transition-colors px-5 py-3.5 rounded-xl font-semibold text-sm text-white">
-            Send
-          </button>
-        </form>
-      </footer>
-    </div>
-  );
-}
+      
