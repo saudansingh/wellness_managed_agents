@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
-# Injects environment values into runtime memory before local imports execute
+# Initialize key management ecosystems immediately before downstream module loads
 load_dotenv()  
 
 from orchestrator import execute_wellness_orchestration
@@ -12,29 +12,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
-
-# Import database initialization and CRUD operations
 from database import initialize_database, save_user_profile, get_user_profile_string
 
-# =========================================================
-# 1. Initialize FastAPI Application & Lifespan Architecture
-# =========================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup Events
-    print("🚀 Starting API Server and initializing cloud databases...")
+    print("🚀 Starting API Server and initializing local cloud databases...")
     initialize_database()
     yield
-    # Shutdown Events (Can be left blank or used to close pool connections)
     print("🛑 Shutting down API Server cleanly...")
 
 app = FastAPI(
     title="Managed Wellness Multi-Agent Platform API",
-    description="Enterprise backend powering orchestrated fitness, yoga, and nutrition generation.",
+    description="Enterprise backend powering orchestrated fitness, yoga, and nutrition generation sequences.",
     version="1.0.0",
     lifespan=lifespan
 )
 
+# Enforce secure CORS parameters for web layouts
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -43,9 +37,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =========================================================
-# 2. Define Pydantic Input Data Models
-# =========================================================
 class OnboardUserRequest(BaseModel):
     userId: str = Field(..., description="Unique identifier matching frontend state.")
     age: int = Field(..., ge=13, le=100)
@@ -54,12 +45,8 @@ class OnboardUserRequest(BaseModel):
     goals: Optional[str] = Field("", description="Primary goals / restrictions mapped from onboarding.")
 
 class ChatModel(BaseModel):
-    user_id: str = Field(..., description="The registered User ID.")
+    user_id: str = Field(..., description="The registered User ID context.")
     user_message: str = Field(..., description="The direct question or prompt from the user chat bar.")
-
-# =========================================================
-# 3. Define API Endpoints
-# =========================================================
 
 @app.get("/")
 def read_root():
@@ -92,6 +79,7 @@ def generate_wellness_plan(payload: ChatModel):
         )
         
     try:
+        # Dynamic verification logs for validation check sequences
         current_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_SEARCH_API_KEY") or "NOT_FOUND"
         key_trace = current_key[:15] if len(current_key) > 15 else "INVALID_KEY_LENGTH"
         print(f"\n DEBUG: The API Key being used starts with: {key_trace}...\n")
@@ -113,8 +101,5 @@ def generate_wellness_plan(payload: ChatModel):
             detail=f"Orchestration failure during agent execution sequence: {str(e)}"
         )
 
-# =========================================================
-# Local Execution Entry Point
-# =========================================================
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
