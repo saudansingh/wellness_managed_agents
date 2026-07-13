@@ -153,3 +153,29 @@ def get_last_week_number(user_id: str) -> int:
     cur.close()
     conn.close()
     return max_week
+
+def save_chat_message(user_id: str, role: str, content: str):
+    """Saves an interactive chat message turn to SQLite to persist context."""
+    query = "INSERT INTO chat_history (user_id, role, content) VALUES (?, ?, ?);"
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(query, (user_id, role, content))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_chat_history_messages(user_id: str, limit: int = 10) -> list:
+    """Retrieves the recent chat context window to feed LangGraph nodes."""
+    query = "SELECT role, content FROM chat_history WHERE user_id = ? ORDER BY id DESC LIMIT ?;"
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(query, (user_id, limit))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    
+    # Reverse it to preserve chronological conversation order
+    messages = []
+    for row in reversed(rows):
+        messages.append({"role": row["role"], "content": row["content"]})
+    return messages
