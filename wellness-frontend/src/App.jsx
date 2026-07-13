@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import './index.css';
 
 export default function App() {
+  // Production URL pointing explicitly to your Cloud Run Instance
   const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://wellness-managed-agents-git-436702918308.asia-south1.run.app';
   
   const [screen, setScreen] = useState(() => localStorage.getItem('wellness_screen') || 'onboarding');
@@ -38,20 +39,38 @@ export default function App() {
     }
     setIsLoading(true);
     setLoadingStatus("Synchronizing profile vectors...");
+    
+    // Explicitly map frontend state keys to backend Pydantic schema parameters
+    const payload = {
+      userId: String(profile.userId).trim(),
+      age: parseInt(profile.age, 10),
+      weight: parseFloat(profile.weight),
+      injuries: profile.injuries || "None",
+      goals: profile.goals || "None"
+    };
+
     try {
-      await fetch(`${BACKEND_URL}/api/save-profile`, {
+      const response = await fetch(`${BACKEND_URL}/api/save-profile`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profile),
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload),
       });
 
+      if (!response.ok) {
+        throw new Error(`Server returned status code: ${response.status}`);
+      }
+
       if (messages.length === 0) {
-        setMessages([{ sender: 'ai', text: `Welcome **${profile.userId}**! Your profile is securely loaded. Ask me anything about custom sports nutrition, posture mechanics, or fitness programs!` }]);
+        setMessages([{ sender: 'ai', text: `Welcome **${profile.userId}**! Your profile is securely loaded into the cloud repository. Ask me anything about custom sports nutrition, posture mechanics, or fitness programs!` }]);
       }
       setScreen('chat');
     } catch (error) {
+      console.error("Onboarding Sync Error:", error);
       if (messages.length === 0) {
-        setMessages([{ sender: 'ai', text: `⚠️ **Running in preview mode.** System fell back safely. Feel free to interact with the interface shell!` }]);
+        setMessages([{ sender: 'ai', text: `⚠️ **Running in preview mode.** Local connection failed to handshake with Cloud Run backend. Using offline interface shell configuration.` }]);
       }
       setScreen('chat');
     } finally {
@@ -74,9 +93,9 @@ export default function App() {
 
     if (isCasual) {
       setLoadingStatus('💬 Connecting to Core Matrix...');
-    } else if (textLower.includes('diet') || textLower.includes('eat') || textLower.includes('calorie')) {
+    } else if (textLower.includes('diet') || textLower.includes('eat') || textLower.includes('calorie') || textLower.includes('recipe')) {
       setLoadingStatus('🥗 Clinical Sports Dietitian compiling macros...');
-    } else if (textLower.includes('yoga') || textLower.includes('stretch') || textLower.includes('back')) {
+    } else if (textLower.includes('yoga') || textLower.includes('stretch') || textLower.includes('back') || textLower.includes('pain')) {
       setLoadingStatus('🧘 Yoga Therapist optimizing posture alignment...');
     } else {
       setLoadingStatus('🏋️ Personal Trainer configuring sets and reps...');
@@ -85,13 +104,30 @@ export default function App() {
     try {
       const response = await fetch(`${BACKEND_URL}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: profile.userId, user_message: userMessage }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ 
+          user_id: String(profile.userId).trim(), 
+          user_message: userMessage 
+        }),
       });
+
+      if (!response.ok) {
+        throw new Error(`Chat terminal returned status code: ${response.status}`);
+      }
+
       const data = await response.json();
-      setMessages(prev => [...prev, { sender: 'ai', text: data.plan_markdown }]);
+      
+      if (data.success && data.plan_markdown) {
+        setMessages(prev => [...prev, { sender: 'ai', text: data.plan_markdown }]);
+      } else {
+        setMessages(prev => [...prev, { sender: 'ai', text: `❌ Engine failed to return structural data contents.` }]);
+      }
     } catch (error) {
-      setMessages(prev => [...prev, { sender: 'ai', text: `❌ Network connection bottleneck encountered. Please check back shortly.` }]);
+      console.error("Orchestrator Connection Error:", error);
+      setMessages(prev => [...prev, { sender: 'ai', text: `❌ Network connection bottleneck encountered. Ensure the cloud service is up and try transmitting your request again.` }]);
     } finally {
       setIsLoading(false);
     }
@@ -196,7 +232,7 @@ export default function App() {
           <button onClick={() => setScreen('onboarding')} className="back-btn">
             ← Modify Profile
           </button>
-          <span style={{ fontSize: '11px', color: '#64748b', fontMono: 'true' }}>
+          <span style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>
             NODE: <span style={{ color: '#10b981', fontWeight: 'bold' }}>ONLINE</span>
           </span>
         </header>
