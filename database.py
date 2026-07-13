@@ -42,7 +42,7 @@ def initialize_database():
             content TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        """    
+        """
     )
     conn = None
     try:
@@ -108,7 +108,6 @@ def save_weekly_plan(user_id: str, week_number: int, workout: str, yoga: str, di
         if isinstance(output, list):
             extracted_chunks = []
             for item in output:
-                # If it's a dictionary containing a 'text' key (Gemini 2.5 format)
                 if isinstance(item, dict) and "text" in item:
                     extracted_chunks.append(item["text"])
                 elif isinstance(item, dict) and "content" in item:
@@ -122,7 +121,6 @@ def save_weekly_plan(user_id: str, week_number: int, workout: str, yoga: str, di
             
         return str(output)
 
-    # Clean the agent outputs before sending them to the SQLite tables
     workout = clean_agent_output(workout)
     yoga = clean_agent_output(yoga)
     diet = clean_agent_output(diet)
@@ -174,7 +172,6 @@ def get_chat_history_messages(user_id: str, limit: int = 10) -> list:
     cur.close()
     conn.close()
     
-    # Reverse it to preserve chronological conversation order
     messages = []
     for row in reversed(rows):
         messages.append({"role": row["role"], "content": row["content"]})
