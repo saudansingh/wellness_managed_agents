@@ -11,11 +11,12 @@ from tools import search_youtube_videos, search_and_scrape_recipe
 specialist_flash_model = ChatGroq(
     model="llama-3.3-70b-versatile",
     groq_api_key=os.getenv("GROQ_API_KEY"),
-    temperature=0.2, # Slightly higher for more natural text generation
-    max_retries=1,
-    timeout=20
+    temperature=0.1,
+    max_retries=1, # Bypasses systemic tenacity freezes
+    timeout=30     # Cut down timeout window
 )
 
+# The Intellectual Engine: Shared utility instance
 analytical_pro_model = ChatGroq(
     model="llama-3.3-70b-versatile",
     groq_api_key=os.getenv("GROQ_API_KEY"),
