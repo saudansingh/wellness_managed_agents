@@ -89,12 +89,12 @@ def generate_wellness_plan(payload: ChatModel):
     if not payload.user_message or not payload.user_message.strip():
         raise HTTPException(status_code=400, detail="user_message cannot be empty.")
 
-    profile_check = get_user_profile_string(payload.user_id)
-    if "No profile found" in profile_check:
-        raise HTTPException(
-            status_code=404,
-            detail=f"User ID '{payload.user_id}' has not been onboarded yet. Please complete setup form first."
-        )
+    # profile_check = get_user_profile_string(payload.user_id) ( i have commented this to paas normal msg direct)
+    # if "No profile found" in profile_check:
+    #     raise HTTPException(
+    #         status_code=404,
+    #         detail=f"User ID '{payload.user_id}' has not been onboarded yet. Please complete setup form first."
+    #     )
 
     try:
         final_markdown_plan = execute_wellness_orchestration(
