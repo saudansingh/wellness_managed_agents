@@ -284,51 +284,19 @@ workflow.add_edge("clarify_response", END)
 wellness_orchestrator = workflow.compile()
 
 def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
-    cleaned_message = user_message.strip()
-    if not cleaned_message:
+    if not user_message or not user_message.strip():
         return "I didn't receive any message — could you type your question?"
 
-    # --- FAST TRACK LIGHTWEIGHT INTERCEPTOR (Sub-Second Latency) ---
-    # Catch basic short-form greetings and acknowledgments immediately
-    fast_tokens = {"hi", "hello", "hey", "sup", "thanks", "thank you", "ok", "okay", "bye"}
-    if cleaned_message.lower().replace(".", "").replace("!", "") in fast_tokens:
-        print("⚡ [Fast Track] Short-circuiting graph for casual greeting.")
-        
-        # Pull conversational context string directly
-        history_context = get_recent_history(user_id, turns=4) or "No prior history"
-        
-        # Single fast inference call with zero graph overhead
-        fast_prompt = f"""You are a friendly, natural AI Wellness Assistant. 
-Respond to the user's greeting naturally as part of a continuous two-way conversation. 
-Keep it engaging, warm, and under 2 sentences.
-
-Context:
-{history_context}
-
-User message: {cleaned_message}
-Response:"""
-        
-        # Directly invoke the model and skip the graph compilation completely
-        final_output = analytical_pro_model.invoke(fast_prompt).content.strip()
-        
-        # Log to chat history database tables instantly
-        save_chat_message(user_id, "user", cleaned_message)
-        save_chat_message(user_id, "assistant", final_output)
-        return final_output
-
-    # --- STANDARD GRAPH PIPELINE ---
-    # Only run heavy graph mechanics if they are actually requesting plans/strategies
-    print("🧬 [Graph Pipeline] Complex request detected. Initializing Multi-Agent Mesh...")
     initial_inputs = {
         "user_id": user_id,
-        "user_message": cleaned_message,
+        "user_message": user_message.strip(),
         "required_agents": [],
     }
     final_state = wellness_orchestrator.invoke(initial_inputs)
     final_output = final_state["final_output"]
 
     # Log conversational history turns cleanly into database tables
-    save_chat_message(user_id, "user", cleaned_message)
+    save_chat_message(user_id, "user", user_message.strip())
     save_chat_message(user_id, "assistant", final_output)
 
     return final_output
