@@ -1,5 +1,6 @@
 from typing import TypedDict, Union, Optional, List, Any
 from langgraph.graph import StateGraph, START, END
+import re
 
 from agents import (
     run_trainer_agent,
@@ -283,20 +284,61 @@ workflow.add_edge("clarify_response", END)
 
 wellness_orchestrator = workflow.compile()
 
+import re
+
 def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
-    if not user_message or not user_message.strip():
+    cleaned_message = user_message.strip()
+    if not cleaned_message:
         return "I didn't receive any message — could you type your question?"
 
+    # --- 1. LIGHTWEIGHT CHIT-CHAT INTERCEPTOR (Sub-Second Latency) ---
+    # Normalize the string by stripping punctuation and converting to lowercase
+    normalized_msg = re.sub(r'[^\w\s]', '', cleaned_message.lower()).strip()
+    
+    # Define exact words that indicate casual conversation/greetings
+    casual_tokens = {
+        "hi", "hello", "hey", "sup", "yo", "good morning", "good evening", 
+        "thanks", "thank you", "ok", "okay", "cool", "got it", "bye", "see ya"
+    }
+    
+    if normalized_msg in casual_tokens or len(normalized_msg.split()) <= 2 and normalized_msg in casual_tokens:
+        print("⚡ [Fast Track] Short-circuiting graph for casual conversation.")
+        
+        # Pull conversational context directly from DB (Skip profile string generation)
+        history_context = get_recent_history(user_id, turns=4) or "No prior history"
+        
+        # Single fast inference call with zero graph or tool overhead
+        fast_prompt = f"""You are a friendly, natural AI Wellness Assistant. 
+Respond to the user's greeting naturally as part of a continuous two-way conversation. 
+Keep it engaging, warm, and under 2 sentences.
+
+Recent History:
+{history_context}
+
+User message: {cleaned_message}
+Response:"""
+        
+        # Directly invoke the model, completely bypassing the graph compilation pipeline
+        final_output = analytical_pro_model.invoke(fast_prompt).content.strip()
+        
+        # Log to chat history database instantly so context isn't broken
+        save_chat_message(user_id, "user", cleaned_message)
+        save_chat_message(user_id, "assistant", final_output)
+        return final_output
+
+    # --- 2. COMPLEX GRAPH PIPELINE ---
+    # Only run heavy graph mechanics if they are actually requesting specialized plans
+    print("🧬 [Graph Pipeline] Specialized request detected. Launching Multi-Agent Mesh...")
     initial_inputs = {
         "user_id": user_id,
-        "user_message": user_message.strip(),
+        "user_message": cleaned_message,
         "required_agents": [],
     }
     final_state = wellness_orchestrator.invoke(initial_inputs)
     final_output = final_state["final_output"]
 
     # Log conversational history turns cleanly into database tables
-    save_chat_message(user_id, "user", user_message.strip())
+    save_chat_message(user_id, "user", cleaned_message)
     save_chat_message(user_id, "assistant", final_output)
 
     return final_output
