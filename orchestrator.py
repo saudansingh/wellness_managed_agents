@@ -13,7 +13,7 @@ from database import (
     get_last_week_number,
     save_weekly_plan,
     get_recent_history,
-    save_message
+    save_chat_message
 )
 
 # Canonical execution order. Even if the router returns them in a different
