@@ -314,7 +314,7 @@ def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
 
     # Log both sides of the turn so future messages in this conversation
     # have real context to resolve against.
-    save_message(user_id, "user", user_message.strip())
-    save_message(user_id, "assistant", final_output)
+    save_chat_message(user_id, "user", user_message.strip())
+    save_chat_message(user_id, "assistant", final_output)
 
     return final_output
