@@ -164,7 +164,7 @@ def get_last_week_number(user_id: str) -> int:
 # Conversation memory
 # =========================================================
 
-def save_message(user_id: str, role: str, message: str):
+def save_chat_message(user_id: str, role: str, message: str):
     if not message:
         return
     query = "INSERT INTO conversation_messages (user_id, role, message) VALUES (%s, %s, %s);"
