@@ -82,24 +82,82 @@ def onboard_user(payload: OnboardUserRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error during user onboarding: {str(e)}")
 
+# @app.post("/api/chat")
+# def generate_wellness_plan(payload: ChatModel):
+#     # Reject blank/whitespace-only messages up front (previously these were
+#     # passed straight through to the LLM router, wasting a call for nothing).
+#     if not payload.user_message or not payload.user_message.strip():
+#         raise HTTPException(status_code=400, detail="user_message cannot be empty.")
+
+#     # profile_check = get_user_profile_string(payload.user_id) ( i have commented this to paas normal msg direct)
+#     # if "No profile found" in profile_check:
+#     #     raise HTTPException(
+#     #         status_code=404,
+#     #         detail=f"User ID '{payload.user_id}' has not been onboarded yet. Please complete setup form first."
+#     #     )
+
+#     try:
+#         final_markdown_plan = execute_wellness_orchestration(
+#             user_id=payload.user_id,
+#             user_message=payload.user_message
+#         )
+
+#         return {
+#             "success": True,
+#             "user_id": payload.user_id,
+#             "plan_markdown": final_markdown_plan
+#         }
+#     except Exception as e:
+#         traceback.print_exc()
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Orchestration failure during agent execution sequence: {str(e)}"
+#         )
+
+
+
+import re
+
 @app.post("/api/chat")
 def generate_wellness_plan(payload: ChatModel):
-    # Reject blank/whitespace-only messages up front (previously these were
-    # passed straight through to the LLM router, wasting a call for nothing).
+    # 1. Reject empty space instantly
     if not payload.user_message or not payload.user_message.strip():
         raise HTTPException(status_code=400, detail="user_message cannot be empty.")
 
-    # profile_check = get_user_profile_string(payload.user_id) ( i have commented this to paas normal msg direct)
-    # if "No profile found" in profile_check:
-    #     raise HTTPException(
-    #         status_code=404,
-    #         detail=f"User ID '{payload.user_id}' has not been onboarded yet. Please complete setup form first."
-    #     )
+    cleaned_message = payload.user_message.strip()
+
+    # =========================================================
+    # 🚨 TOP-LEVEL FAST INTERCEPTOR (Bypasses Orchestrator Entirely)
+    # =========================================================
+    # Normalize string: remove punctuation, force lowercase
+    normalized_msg = re.sub(r'[^\w\s]', '', cleaned_message.lower()).strip()
+    
+    # Exact greeting triggers
+    casual_tokens = {"hi", "hello", "hey", "sup", "yo", "hola"}
+    
+    if normalized_msg in casual_tokens:
+        print("⚡ [CRITICAL SPEED BYPASS] Returning hardcoded greeting in 1ms.")
+        return {
+            "success": True,
+            "user_id": payload.user_id,
+            "plan_markdown": "Hey there! 👋 I'm your wellness assistant. Are we planning a workout, running through a yoga session, or sorting out your nutrition adjustments today?"
+        }
+    # =========================================================
+
+    # 2. Standard Agent Graph Path (Only triggered for actual plans)
+    print("🧬 [Graph Route] Specialized plan requested. Invoking multi-agent workflow...")
+    
+    profile_check = get_user_profile_string(payload.user_id)
+    if "No profile found" in profile_check:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User ID '{payload.user_id}' has not been onboarded yet. Please complete setup form first."
+        )
 
     try:
         final_markdown_plan = execute_wellness_orchestration(
             user_id=payload.user_id,
-            user_message=payload.user_message
+            user_message=cleaned_message
         )
 
         return {
@@ -113,6 +171,7 @@ def generate_wellness_plan(payload: ChatModel):
             status_code=500,
             detail=f"Orchestration failure during agent execution sequence: {str(e)}"
         )
+
 
 # =========================================================
 # Local Execution Entry Point
