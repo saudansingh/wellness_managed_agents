@@ -1,5 +1,6 @@
 import traceback
 import os
+import re
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
@@ -116,36 +117,75 @@ def onboard_user(payload: OnboardUserRequest):
 
 
 
-import re
+
 
 @app.post("/api/chat")
 def generate_wellness_plan(payload: ChatModel):
-    # 1. Reject empty space instantly
     if not payload.user_message or not payload.user_message.strip():
         raise HTTPException(status_code=400, detail="user_message cannot be empty.")
 
     cleaned_message = payload.user_message.strip()
+    normalized_msg = cleaned_message.lower()
 
     # =========================================================
-    # 🚨 TOP-LEVEL FAST INTERCEPTOR (Bypasses Orchestrator Entirely)
+    # 🧠 SMART SEMANTIC ROUTER (Wellness Trigger Keywords)
     # =========================================================
-    # Normalize string: remove punctuation, force lowercase
-    normalized_msg = re.sub(r'[^\w\s]', '', cleaned_message.lower()).strip()
-    
-    # Exact greeting triggers
-    casual_tokens = {"hi", "hello", "hey", "sup", "yo", "hola"}
-    
-    if normalized_msg in casual_tokens:
-        print("⚡ [CRITICAL SPEED BYPASS] Returning hardcoded greeting in 1ms.")
-        return {
-            "success": True,
-            "user_id": payload.user_id,
-            "plan_markdown": "Hey there! 👋 I'm your wellness assistant. Are we planning a workout, running through a yoga session, or sorting out your nutrition adjustments today?"
-        }
-    # =========================================================
+    # If the message contains ANY of these words, it needs a specialist agent.
+    wellness_keywords = {
+        "workout", "train", "exercise", "gym", "routine", "lift", "cardio",
+        "yoga", "stretch", "mobility", "asana", "pain", "stiff", "flexibility",
+        "diet", "food", "eat", "recipe", "macro", "calorie", "protein", "carb",
+        "veg", "non-veg", "weight", "gain", "lose", "fat", "muscle", "plan"
+    }
 
-    # 2. Standard Agent Graph Path (Only triggered for actual plans)
-    print("🧬 [Graph Route] Specialized plan requested. Invoking multi-agent workflow...")
+    # Check if any wellness keyword is present in the user's message
+    is_wellness_request = any(word in normalized_msg for word in wellness_keywords)
+
+    if not is_wellness_request:
+        print("⚡ [Fast Casual Brain] Handling general conversation directly.")
+        
+        # Pull the recent history context so it flows like a real 2-way conversation
+        from database import get_recent_history, save_chat_message
+        from agents import analytical_pro_model
+        
+        history_context = get_recent_history(payload.user_id, turns=6) or "No prior history"
+
+        # Ask the LLM to act like a natural conversationalist who gently guides the user
+        conversational_prompt = f"""You are a friendly, conversational AI Wellness Assistant. 
+The user is talking casually with you, responding to a prompt, or asking general questions. 
+
+Guidelines:
+1. Talk like a real human in a natural 2-way conversation. Respond directly to their statement.
+2. Keep your answer brief, warm, and engaging (1 to 2 sentences max).
+3. Do NOT repeat an error message or say "I didn't catch that". 
+4. If they do not want to discuss fitness right now, politely acknowledge it or chat with them casually.
+
+Recent Chat History:
+{history_context}
+
+User's current message: "{cleaned_message}"
+Response:"""
+
+        try:
+            # Fast raw LLM call completely bypassing the heavy LangGraph overhead
+            bot_reply = analytical_pro_model.invoke(conversational_prompt).content.strip()
+            
+            # Persist history so the context stays unbroken
+            save_chat_message(payload.user_id, "user", cleaned_message)
+            save_chat_message(payload.user_id, "assistant", bot_reply)
+
+            return {
+                "success": True,
+                "user_id": payload.user_id,
+                "plan_markdown": bot_reply
+            }
+        except Exception as e:
+            print(f"Fallback error in casual handler: {e}")
+
+    # =========================================================
+    # 🧬 ENTERPRISE AGENT GRAPH PATH (Only triggered for plans)
+    # =========================================================
+    print("🧬 [Graph Route] Wellness intent identified. Invoking specialized agents...")
     
     profile_check = get_user_profile_string(payload.user_id)
     if "No profile found" in profile_check:
@@ -171,14 +211,3 @@ def generate_wellness_plan(payload: ChatModel):
             status_code=500,
             detail=f"Orchestration failure during agent execution sequence: {str(e)}"
         )
-
-
-# =========================================================
-# Local Execution Entry Point
-# =========================================================
-if __name__ == "__main__":
-    # Cloud Run injects PORT (usually 8080) and requires binding to 0.0.0.0.
-    # reload=True is dev-only — never use it in the deployed container.
-    port = int(os.environ.get("PORT", 8000))
-    is_local = os.environ.get("ENV", "local") == "local"
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=is_local)
