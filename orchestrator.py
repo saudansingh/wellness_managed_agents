@@ -286,102 +286,49 @@ workflow.add_edge("clarify_response", END)
 
 wellness_orchestrator = workflow.compile()
 
-import re
-
-# def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
-#     cleaned_message = user_message.strip()
-#     if not cleaned_message:
-#         return "I didn't receive any message — could you type your question?"
-
-#     # --- 1. LIGHTWEIGHT CHIT-CHAT INTERCEPTOR (Sub-Second Latency) ---
-#     # Normalize the string by stripping punctuation and converting to lowercase
-#     normalized_msg = re.sub(r'[^\w\s]', '', cleaned_message.lower()).strip()
-    
-#     # Define exact words that indicate casual conversation/greetings
-#     casual_tokens = {
-#         "hi", "hello", "hey", "sup", "yo", "good morning", "good evening", 
-#         "thanks", "thank you", "ok", "okay", "cool", "got it", "bye", "see ya"
-#     }
-    
-#     if normalized_msg in casual_tokens or len(normalized_msg.split()) <= 2 and normalized_msg in casual_tokens:
-#         print("⚡ [Fast Track] Short-circuiting graph for casual conversation.")
-        
-#         # Pull conversational context directly from DB (Skip profile string generation)
-#         history_context = get_recent_history(user_id, turns=4) or "No prior history"
-        
-#         # Single fast inference call with zero graph or tool overhead
-#         fast_prompt = f"""You are a friendly, natural AI Wellness Assistant. 
-# Respond to the user's greeting naturally as part of a continuous two-way conversation. 
-# Keep it engaging, warm, and under 2 sentences.
-
-# Recent History:
-# {history_context}
-
-# User message: {cleaned_message}
-# Response:"""
-        
-#         # Directly invoke the model, completely bypassing the graph compilation pipeline
-#         final_output = analytical_pro_model.invoke(fast_prompt).content.strip()
-        
-#         # Log to chat history database instantly so context isn't broken
-#         save_chat_message(user_id, "user", cleaned_message)
-#         save_chat_message(user_id, "assistant", final_output)
-#         return final_output
-
-#     # --- 2. COMPLEX GRAPH PIPELINE ---
-#     # Only run heavy graph mechanics if they are actually requesting specialized plans
-#     print("🧬 [Graph Pipeline] Specialized request detected. Launching Multi-Agent Mesh...")
-#     initial_inputs = {
-#         "user_id": user_id,
-#         "user_message": cleaned_message,
-#         "required_agents": [],
-#     }
-#     final_state = wellness_orchestrator.invoke(initial_inputs)
-#     final_output = final_state["final_output"]
-
-#     # Log conversational history turns cleanly into database tables
-#     save_chat_message(user_id, "user", cleaned_message)
-#     save_chat_message(user_id, "assistant", final_output)
-
-#     return final_output
-
-
-
 def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
     cleaned_message = user_message.strip()
-    
-    # --- 1. PURE ZERO-DB FAST LANE ---
+    if not cleaned_message:
+        return "I didn't receive any message — could you type your question?"
+
+    # --- 1. LIGHTWEIGHT CHIT-CHAT INTERCEPTOR (Sub-Second Latency) ---
+    # Normalize the string by stripping punctuation and converting to lowercase
     normalized_msg = re.sub(r'[^\w\s]', '', cleaned_message.lower()).strip()
-    casual_tokens = {"hi", "hello", "hey", "sup", "yo", "thanks", "thank you", "ok", "okay"}
     
-    if normalized_msg in casual_tokens:
-        print("⚡ [Fast Track] Zero-DB Instant Reply Activated.")
+    # Define exact words that indicate casual conversation/greetings
+    casual_tokens = {
+        "hi", "hello", "hey", "sup", "yo", "good morning", "good evening", 
+        "thanks", "thank you", "ok", "okay", "cool", "got it", "bye", "see ya"
+    }
+    
+    if normalized_msg in casual_tokens or len(normalized_msg.split()) <= 2 and normalized_msg in casual_tokens:
+        print("⚡ [Fast Track] Short-circuiting graph for casual conversation.")
         
-        # Hardcoded friendly responses entirely remove LLM & DB latency (Instantaneous)
-        if normalized_msg in {"hi", "hello", "hey", "sup", "yo"}:
-            reply = "Hey there! 👋 I'm your wellness assistant. Are we planning a workout, yoga session, or sorting out your nutrition today?"
-        else:
-            reply = "Awesome! Let me know when you're ready to dive into your plans or if you have any questions."
-            
-        # Optional: Save chat history silently (if this function blocks, it can be optimized later)
-        try:
-            save_chat_message(user_id, "user", cleaned_message)
-            save_chat_message(user_id, "assistant", reply)
-        except Exception:
-            pass
-            
-        return reply
+        # Pull conversational context directly from DB (Skip profile string generation)
+        history_context = get_recent_history(user_id, turns=4) or "No prior history"
+        
+        # Single fast inference call with zero graph or tool overhead
+        fast_prompt = f"""You are a friendly, natural AI Wellness Assistant. 
+Respond to the user's greeting naturally as part of a continuous two-way conversation. 
+Keep it engaging, warm, and under 2 sentences.
 
-    # --- 2. DEFERRED COMPLEX GRAPH LANE ---
-    # The database profile validation now only runs when a plan is actually requested
-    print("🧬 [Graph Pipeline] Specialized request detected. Verifying profile...")
-    profile_check = get_user_profile_string(user_id)
-    if "No profile found" in profile_check:
-        raise HTTPException(
-            status_code=404,
-            detail=f"User ID '{user_id}' has not been onboarded yet. Please complete setup form first."
-        )
+Recent History:
+{history_context}
 
+User message: {cleaned_message}
+Response:"""
+        
+        # Directly invoke the model, completely bypassing the graph compilation pipeline
+        final_output = analytical_pro_model.invoke(fast_prompt).content.strip()
+        
+        # Log to chat history database instantly so context isn't broken
+        save_chat_message(user_id, "user", cleaned_message)
+        save_chat_message(user_id, "assistant", final_output)
+        return final_output
+
+    # --- 2. COMPLEX GRAPH PIPELINE ---
+    # Only run heavy graph mechanics if they are actually requesting specialized plans
+    print("🧬 [Graph Pipeline] Specialized request detected. Launching Multi-Agent Mesh...")
     initial_inputs = {
         "user_id": user_id,
         "user_message": cleaned_message,
@@ -390,7 +337,58 @@ def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
     final_state = wellness_orchestrator.invoke(initial_inputs)
     final_output = final_state["final_output"]
 
+    # Log conversational history turns cleanly into database tables
     save_chat_message(user_id, "user", cleaned_message)
     save_chat_message(user_id, "assistant", final_output)
 
     return final_output
+
+
+
+# def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
+#     cleaned_message = user_message.strip()
+    
+#     # --- 1. PURE ZERO-DB FAST LANE ---
+#     normalized_msg = re.sub(r'[^\w\s]', '', cleaned_message.lower()).strip()
+#     casual_tokens = {"hi", "hello", "hey", "sup", "yo", "thanks", "thank you", "ok", "okay"}
+    
+#     if normalized_msg in casual_tokens:
+#         print("⚡ [Fast Track] Zero-DB Instant Reply Activated.")
+        
+#         # Hardcoded friendly responses entirely remove LLM & DB latency (Instantaneous)
+#         if normalized_msg in {"hi", "hello", "hey", "sup", "yo"}:
+#             reply = "Hey there! 👋 I'm your wellness assistant. Are we planning a workout, yoga session, or sorting out your nutrition today?"
+#         else:
+#             reply = "Awesome! Let me know when you're ready to dive into your plans or if you have any questions."
+            
+#         # Optional: Save chat history silently (if this function blocks, it can be optimized later)
+#         try:
+#             save_chat_message(user_id, "user", cleaned_message)
+#             save_chat_message(user_id, "assistant", reply)
+#         except Exception:
+#             pass
+            
+#         return reply
+
+#     # --- 2. DEFERRED COMPLEX GRAPH LANE ---
+#     # The database profile validation now only runs when a plan is actually requested
+#     print("🧬 [Graph Pipeline] Specialized request detected. Verifying profile...")
+#     profile_check = get_user_profile_string(user_id)
+#     if "No profile found" in profile_check:
+#         raise HTTPException(
+#             status_code=404,
+#             detail=f"User ID '{user_id}' has not been onboarded yet. Please complete setup form first."
+#         )
+
+#     initial_inputs = {
+#         "user_id": user_id,
+#         "user_message": cleaned_message,
+#         "required_agents": [],
+#     }
+#     final_state = wellness_orchestrator.invoke(initial_inputs)
+#     final_output = final_state["final_output"]
+
+#     save_chat_message(user_id, "user", cleaned_message)
+#     save_chat_message(user_id, "assistant", final_output)
+
+#     return final_output
