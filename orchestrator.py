@@ -284,7 +284,7 @@ workflow = StateGraph(WellnessState)
 
 workflow.add_node("fast_router", fast_router_node)
 workflow.add_node("initialize", initialize_workflow_node)
-workflow.add_node("profile_gate", profile_gate_node)
+
 workflow.add_node("handle_no_profile", handle_no_profile_node)
 workflow.add_node("trainer", trainer_node)
 workflow.add_node("yogi", yogi_node)
