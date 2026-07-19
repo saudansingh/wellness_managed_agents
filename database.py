@@ -1,14 +1,7 @@
 import os
 import psycopg2
+from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
-
-# =========================================================
-# Neon Postgres connection
-# =========================================================
-# Set DATABASE_URL to the connection string Neon gives you, e.g.:
-#   postgresql://user:password@ep-xxxx.neon.tech/wellness?sslmode=require
-# Neon requires SSL — make sure sslmode=require (or similar) is in the string,
-# or the fallback below adds it automatically if it's missing.
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -16,14 +9,17 @@ if DATABASE_URL and "sslmode" not in DATABASE_URL:
     separator = "&" if "?" in DATABASE_URL else "?"
     DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
 
-def get_db_connection():
-    """Opens a fresh connection to the Neon Postgres database."""
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not set. Add your Neon connection string as an env var.")
-    return psycopg2.connect(DATABASE_URL)
+_connection_pool = None
 
 def initialize_database():
-    """Creates the necessary tables if they don't exist."""
+    """Creates the connection pool and the necessary tables if they don't exist."""
+    global _connection_pool
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set. Add your Neon connection string as an env var.")
+
+    if _connection_pool is None:
+        _connection_pool = psycopg2.pool.SimpleConnectionPool(1, 10, DATABASE_URL)
+
     commands = (
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -65,12 +61,23 @@ def initialize_database():
             cur.execute(command)
         conn.commit()
         cur.close()
-        print("✅ Neon Postgres database initialized successfully.")
+        print("✅ Neon Postgres database initialized successfully (pooled).")
     except Exception as e:
         print(f"❌ Error initializing Postgres database: {e}")
     finally:
         if conn is not None:
-            conn.close()
+            release_db_connection(conn)
+
+def get_db_connection():
+    """Borrows a connection from the pool instead of opening a fresh TCP/SSL
+    handshake every call — this is the main latency win for Neon."""
+    if _connection_pool is None:
+        raise RuntimeError("Connection pool not initialized. Call initialize_database() first.")
+    return _connection_pool.getconn()
+
+def release_db_connection(conn):
+    if _connection_pool is not None and conn is not None:
+        _connection_pool.putconn(conn)
 
 def save_user_profile(user_id: str, age: int, weight: float, injuries: str, goals: str):
     query = """
@@ -84,20 +91,24 @@ def save_user_profile(user_id: str, age: int, weight: float, injuries: str, goal
             goals = EXCLUDED.goals;
     """
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(query, (user_id, age, weight, injuries, goals))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute(query, (user_id, age, weight, injuries, goals))
+        conn.commit()
+        cur.close()
+    finally:
+        release_db_connection(conn)
 
 def get_user_profile_string(user_id: str) -> str:
     query = "SELECT age, weight_kg, injuries, goals FROM users WHERE user_id = %s;"
     conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute(query, (user_id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, (user_id,))
+        row = cur.fetchone()
+        cur.close()
+    finally:
+        release_db_connection(conn)
 
     if not row:
         return "No profile found for this User ID."
@@ -144,36 +155,38 @@ def save_weekly_plan(user_id: str, week_number: int, workout: str, yoga: str, di
             diet_plan = EXCLUDED.diet_plan;
     """
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(query, (user_id, week_number, workout, yoga, diet))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute(query, (user_id, week_number, workout, yoga, diet))
+        conn.commit()
+        cur.close()
+    finally:
+        release_db_connection(conn)
 
 def get_last_week_number(user_id: str) -> int:
     query = "SELECT COALESCE(MAX(week_number), 0) FROM weekly_plans WHERE user_id = %s;"
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(query, (user_id,))
-    max_week = cur.fetchone()[0]
-    cur.close()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute(query, (user_id,))
+        max_week = cur.fetchone()[0]
+        cur.close()
+    finally:
+        release_db_connection(conn)
     return max_week
-
-# =========================================================
-# Conversation memory
-# =========================================================
 
 def save_chat_message(user_id: str, role: str, message: str):
     if not message:
         return
     query = "INSERT INTO conversation_messages (user_id, role, message) VALUES (%s, %s, %s);"
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(query, (user_id, role, message))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute(query, (user_id, role, message))
+        conn.commit()
+        cur.close()
+    finally:
+        release_db_connection(conn)
 
 def get_recent_history(user_id: str, turns: int = 6) -> str:
     query = """
@@ -183,11 +196,13 @@ def get_recent_history(user_id: str, turns: int = 6) -> str:
         LIMIT %s;
     """
     conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute(query, (user_id, turns))
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, (user_id, turns))
+        rows = cur.fetchall()
+        cur.close()
+    finally:
+        release_db_connection(conn)
 
     if not rows:
         return ""
