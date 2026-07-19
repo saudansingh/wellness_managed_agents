@@ -148,10 +148,7 @@ def initialize_workflow_node(state: WellnessState) -> dict:
         "final_output": ""
     }
 
-def profile_gate_node(state: WellnessState) -> dict:
-    """No-op passthrough node — exists purely so the conditional edge below
-    has somewhere to route from before the specialist chain starts."""
-    return {}
+
 
 def general_chat_node(state: WellnessState) -> dict:
     """
@@ -314,10 +311,10 @@ workflow.add_conditional_edges(
     }
 )
 
-workflow.add_edge("initialize", "profile_gate")
+
 
 workflow.add_conditional_edges(
-    "profile_gate",
+    "initialize",
     route_after_profile_gate,
     {
         "handle_no_profile": "handle_no_profile",
