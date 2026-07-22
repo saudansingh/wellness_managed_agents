@@ -1,25 +1,25 @@
-import traceback
 import os
+import traceback
 from contextlib import asynccontextmanager
+from typing import Optional
+
 from dotenv import load_dotenv
-
-load_dotenv()
-
-from orchestrator import execute_wellness_orchestration
-import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional
+import uvicorn
 
 from database import initialize_database, save_user_profile
+from orchestrator import execute_wellness_orchestration
+
+load_dotenv()
 
 # =========================================================
 # 1. Initialize FastAPI Application & Lifespan Architecture
 # =========================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Starting API Server and initializing cloud databases...")
+    print("🚀 Starting API Server and initializing cloud database...")
     initialize_database()
     yield
     print("🛑 Shutting down API Server cleanly...")
@@ -47,7 +47,7 @@ app.add_middleware(
 class OnboardUserRequest(BaseModel):
     userId: str = Field(..., description="Unique identifier matching frontend state.")
     age: int = Field(..., ge=13, le=100)
-    weight: float = Field(..., gt=30.0, description="Weight tracking parameter.")
+    weight: float = Field(..., gt=30.0, description="Weight tracking parameter in kg.")
     injuries: Optional[str] = Field("None")
     goals: Optional[str] = Field("", description="Primary goals / focus mapped from onboarding.")
 
@@ -58,7 +58,6 @@ class ChatModel(BaseModel):
 # =========================================================
 # 3. API Endpoints
 # =========================================================
-
 @app.get("/")
 def read_root():
     return {"status": "healthy", "service": "wellness-agent-orchestrator"}
@@ -70,8 +69,8 @@ def onboard_user(payload: OnboardUserRequest):
             user_id=payload.userId,
             age=payload.age,
             weight=payload.weight,
-            injuries=payload.injuries,
-            goals=payload.goals
+            injuries=payload.injuries or "None",
+            goals=payload.goals or "General Wellness"
         )
         return {
             "success": True,
@@ -85,11 +84,6 @@ def generate_wellness_plan(payload: ChatModel):
     if not payload.user_message or not payload.user_message.strip():
         raise HTTPException(status_code=400, detail="user_message cannot be empty.")
 
-    # NOTE: routing decisions (wellness vs. greeting vs. off-topic vs. unsafe,
-    # and which specialist to wake up) all happen in ONE place now:
-    # orchestrator.py's intent_analyzer_node. This endpoint doesn't need its
-    # own keyword filtering or profile pre-checks anymore — the graph handles
-    # missing profiles gracefully too (see handle_no_profile_node).
     try:
         final_markdown_plan = execute_wellness_orchestration(
             user_id=payload.user_id,
