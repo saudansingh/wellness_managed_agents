@@ -7,14 +7,14 @@ from langchain_core.prompts import ChatPromptTemplate
 from tools import search_youtube_videos, search_and_scrape_recipe
 
 # =========================================================
-# 1. Initialize Core Models (No Anthropic / Pure Gemini + Groq)
+# 1. Initialize Core Models
 # =========================================================
 specialist_flash_model = ChatGroq(
     model="llama-3.3-70b-versatile",
     groq_api_key=os.getenv("GROQ_API_KEY"),
     temperature=0.4,
     max_retries=1,
-    timeout=30
+    timeout=20
 )
 
 analytical_pro_model = ChatGroq(
@@ -24,20 +24,19 @@ analytical_pro_model = ChatGroq(
     max_retries=1
 )
 
-# Use Gemini 2.5 Flash for general chat if GOOGLE_API_KEY exists, otherwise fall back to Groq
 google_key = os.getenv("GOOGLE_API_KEY")
 if google_key and not google_key.startswith("YOUR_"):
     conversational_model = ChatGoogleGenerativeAI(
         model="gemini-2.5-flash",
         google_api_key=google_key,
-        temperature=0.7,
-        max_output_tokens=1000
+        temperature=0.6,
+        max_output_tokens=350  # Capped for snappy, brief responses
     )
 else:
     conversational_model = ChatGroq(
         model="llama-3.3-70b-versatile",
         groq_api_key=os.getenv("GROQ_API_KEY"),
-        temperature=0.7,
+        temperature=0.6,
         max_retries=1
     )
 
@@ -54,42 +53,41 @@ def parse_llm_output(raw_output) -> str:
     return str(raw_output)
 
 # =========================================================
-# 3. System Prompts
+# 3. Streamlined System Prompts (Strict Brevity & Flow)
 # =========================================================
-TRAINER_PROMPT = """You are an experienced strength and conditioning coach talking directly to a client — confident, direct, practical, and highly knowledgeable.
+TRAINER_PROMPT = """You are an expert strength coach. Be direct, punchy, and concise (under 150 words).
 
 Provide:
-1. A quick read on their situation based on their request and profile.
-2. 1-2 concrete exercises with actionable coaching form cues.
-3. Common pitfalls to avoid to prevent injury.
+1. Quick assessment.
+2. 1-2 exercises with form cues.
+3. 1 pitfall to avoid.
 
-Never invent video links — only include real markdown links if returned directly from a tool call."""
+Never invent video links — only include markdown links if returned by a tool call."""
 
-YOGI_PROMPT = """You are an expert yoga and mobility instructor — calm, precise, and practical.
+YOGI_PROMPT = """You are a mobility & yoga instructor. Be calm, practical, and concise (under 150 words).
 
 Provide:
-1. A brief physical read on the targeted muscle group or joint mechanics.
-2. 1-2 specific poses with clear alignment cues.
-3. Precise contraindications to protect against strain.
+1. Brief physical focus.
+2. 1-2 poses with alignment cues.
+3. Contraindications.
 
-Never invent video links — only include real markdown links if returned directly from a tool call."""
+Never invent video links — only include markdown links if returned by a tool call."""
 
-DIETITIAN_PROMPT = """You are a sports dietitian — practical, evidence-based, and clear.
+DIETITIAN_PROMPT = """You are a sports dietitian. Be practical and concise (under 150 words).
 
-Provide actionable guidance focusing on macro balance, calorie timing, or meal composition tailored to the user's needs.
-
-Never invent recipe details — only cite specifics if returned directly from a tool call."""
+Provide key macro/dietary guidance tailored to the user.
+Never invent recipe details — only cite specifics if returned by a tool call."""
 
 SAFETY_PROMPT = """You are a Health Safety Auditor.
-If the generated plan is safe and compliant, output: COMPLIANCE PASSED.
-If there is a direct physical hazard or dangerous health instruction, output: CRITICAL REJECTION followed by a short explanation."""
+If the generated plan is safe, output: COMPLIANCE PASSED.
+If dangerous, output: CRITICAL REJECTION followed by a short explanation."""
 
-GENERAL_CHAT_PROMPT = """You are an intelligent, articulate, and friendly AI assistant who specializes in health and wellness.
+GENERAL_CHAT_PROMPT = """You are a friendly, intelligent AI health & wellness assistant.
 
-Guidelines:
-1. OUT-OF-BOUNDS / GENERAL QUESTIONS: Answer general knowledge queries, science questions, coding, math, history, or casual small-talk thoroughly and accurately like a top-tier general LLM. Do NOT refuse general queries or add disclaimers about being strictly a fitness bot.
-2. WELLNESS & GREETINGS: Be warm, engaging, and practical.
-3. CONTEXT: Integrate user profile details or past message history naturally if applicable.
+CRITICAL CHAT RULES:
+1. NO REPETITIVE GREETINGS: Do NOT say "Welcome again", "Welcome back", "Hello!", or re-introduce yourself if there is existing dialogue history. Treat this as an ongoing, continuous chat.
+2. BREVITY: Keep answers concise, direct, and under 100 words for simple chats unless the user explicitly requests an in-depth explanation.
+3. GENERAL QUESTIONS: Answer non-wellness queries (math, coding, general science) directly without disclaimers.
 
 User Profile:
 {profile}
@@ -189,7 +187,7 @@ def run_dietitian_agent(user_profile: str, user_message: str, workload: str) -> 
     return parse_llm_output(response.content)
 
 def run_safety_agent(user_profile: str, complete_plan: str) -> str:
-    if "?" in complete_plan and len(complete_plan) < 250:
+    if len(complete_plan) < 200:
         return "COMPLIANCE PASSED"
 
     chain = safety_prompt_template | analytical_pro_model
