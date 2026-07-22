@@ -8,6 +8,7 @@ from agents import (
     run_yogi_agent,
     run_dietitian_agent,
     run_safety_agent,
+    run_general_chat_agent,
     analytical_pro_model
 )
 from database import (
@@ -153,32 +154,14 @@ def initialize_workflow_node(state: WellnessState) -> dict:
 def general_chat_node(state: WellnessState) -> dict:
     """
     Single adaptive handler for anything that isn't a clear specialist
-    request: greetings that slipped past the instant regex, small talk,
-    vague replies, and — per your requirement — genuinely out-of-bound
-    questions. For out-of-bound questions this must politely explain the
-    bot's scope and point the user elsewhere, rather than attempting an
-    answer it has no data for.
+    request. Runs on the stronger conversational model (see agents.py) since
+    this is the majority of what users actually experience.
     """
-    print("💬 [Agent] General Chat activated.")
-    chat_prompt = f"""You are a warm, natural AI Wellness Assistant. You ONLY have real expertise in
-fitness training, yoga, and nutrition — you do not have access to any other live data
-(no news, weather, general trivia lookups, coding help, etc).
-
-Respond directly to what the user just said:
-- If it's a greeting or casual chat, reply naturally and briefly (1-2 sentences), and you may
-  mention you can help with workouts, yoga, or nutrition.
-- If it's a genuine question outside your wellness scope (general knowledge, unrelated topics,
-  anything you cannot reliably answer), politely say you're a wellness bot and don't have access
-  to that kind of information, and suggest they check a relevant site/search engine for it.
-  Keep it short and friendly, not robotic.
-- If it's vague or unclear, ask a natural one-line follow-up instead of a fixed error message.
-- Never fabricate factual information outside fitness/yoga/nutrition.
-
-Keep the whole response to 1-3 sentences.
-
-User's message: "{state['user_message']}"
-Response:"""
-    response = analytical_pro_model.invoke(chat_prompt).content.strip()
+    print("💬 [Agent] General Chat activated (Claude).")
+    response = run_general_chat_agent(
+        user_message=state["user_message"],
+        recent_history=state.get("recent_history", "")
+    )
     return {"final_output": response}
 
 def safe_redirect_node(state: WellnessState) -> dict:
