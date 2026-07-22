@@ -5,29 +5,27 @@ from googleapiclient.discovery import build
 from langchain_core.tools import tool
 from google import genai
 
-# ---------------------------------------------------------
+# =========================================================
 # Authentication Configuration
-# ---------------------------------------------------------
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "YOUR_YOUTUBE_API_KEY")
-GOOGLE_SEARCH_API_KEY = os.getenv("GOOGLE_SEARCH_API_KEY", "YOUR_GOOGLE_SEARCH_API_KEY")
-GOOGLE_CX = os.getenv("GOOGLE_CX", "YOUR_CUSTOM_SEARCH_ENGINE_ID")
-API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_SEARCH_API_KEY")
+# =========================================================
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
+GOOGLE_SEARCH_API_KEY = os.getenv("GOOGLE_SEARCH_API_KEY", "")
+GOOGLE_CX = os.getenv("GOOGLE_CX", "")
+API_KEY = os.getenv("GOOGLE_API_KEY") or GOOGLE_SEARCH_API_KEY
 
 # =========================================================
-# TOOL 1: YouTube Search Tool (Optimized for Speed)
+# TOOL 1: YouTube Search Tool
 # =========================================================
 @tool
 def search_youtube_videos(query: str, max_results: int = 2) -> str:
     """
-    Searches YouTube for highly authoritative instructional or exercise videos.
-    Returns a clean, raw text block containing the exact titles and URLs for the AI agent to synthesize.
-    
-    Args:
-        query (str): The specific exercise or yoga pose movement phrase.
-        max_results (int): Hard-capped to 2 for maximum latency reductions.
+    Searches YouTube for instructional or exercise videos.
+    Returns title and URL pairs.
     """
+    if not YOUTUBE_API_KEY or YOUTUBE_API_KEY == "YOUR_YOUTUBE_API_KEY":
+        return "YouTube search is currently disabled (missing YOUTUBE_API_KEY)."
+
     try:
-        # Initialize client with minimized metadata request parameters
         youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY, cache_discovery=False)
         
         request = youtube.search().list(
@@ -54,17 +52,16 @@ def search_youtube_videos(query: str, max_results: int = 2) -> str:
         return f"Error executing YouTube search tool: {str(e)}"
 
 # =========================================================
-# TOOL 2: Web Search & Scraping Tool (Optimized for Safety/Speed)
+# TOOL 2: Web Search & Scraping Tool
 # =========================================================
 @tool
 def search_and_scrape_recipe(query: str) -> str:
     """
-    Queries premium custom search engine sources for clinical or culinary data,
-    then automatically parses structural elements from the text content.
-    
-    Args:
-        query (str): Detailed macro or dietary query targeting high-quality recipes.
+    Queries Google Custom Search for recipes and parses content.
     """
+    if not GOOGLE_SEARCH_API_KEY or GOOGLE_SEARCH_API_KEY == "YOUR_GOOGLE_SEARCH_API_KEY":
+        return "Recipe search is currently disabled (missing GOOGLE_SEARCH_API_KEY)."
+
     try:
         search_url = "https://www.googleapis.com/customsearch/v1"
         params = {
@@ -73,11 +70,11 @@ def search_and_scrape_recipe(query: str) -> str:
             "q": query,
             "num": 1
         }
-        search_response = requests.get(search_url, params=params).json()
+        search_response = requests.get(search_url, params=params, timeout=5).json()
         
         items = search_response.get("items", [])
         if not items:
-            return f"Could not isolate high-quality culinary databases for query: '{query}'."
+            return f"Could not locate recipe sources for query: '{query}'."
             
         target_link = items[0]["link"]
         site_title = items[0]["title"]
@@ -85,10 +82,10 @@ def search_and_scrape_recipe(query: str) -> str:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
-        page_response = requests.get(target_link, headers=headers, timeout=4)
+        page_response = requests.get(target_link, headers=headers, timeout=5)
         
         if page_response.status_code != 200:
-            return f"Resource found ({target_link}) but downstream socket refused content extraction."
+            return f"Found resource ({target_link}) but content fetch failed."
             
         soup = BeautifulSoup(page_response.text, "html.parser")
         
@@ -102,8 +99,6 @@ def search_and_scrape_recipe(query: str) -> str:
                 text_blocks.append(text)
                 
         raw_scraped_body = "\n".join(text_blocks)
-        
-        # 🛠️ INTEGRATION: Safely prune the scraped content using token-level constraints before returning
         scraped_body = dynamic_token_chunker(raw_scraped_body, max_tokens=1200)
         
         output = (
@@ -115,16 +110,18 @@ def search_and_scrape_recipe(query: str) -> str:
         
     except Exception as e:
         return f"Error executing recipe scraper tool: {str(e)}"
-    
+
+# =========================================================
+# HELPER: Dynamic Token Chunker
+# =========================================================
 def dynamic_token_chunker(raw_text: str, model_name: str = "gemini-2.5-flash", max_tokens: int = 1500) -> str:
     """
-    Safely counts and trims strings down to strict structural token allocations using modern google-genai APIs.
+    Trims raw text to specified token boundaries with safe fallback.
     """
-    if not API_KEY:
-        return raw_text[:2000] # Fallback to rough character slice if API keys are decoupled
+    if not API_KEY or API_KEY.startswith("YOUR_"):
+        return raw_text[:2000]
         
     try:
-        # Corrected modern client initialization
         client = genai.Client(api_key=API_KEY)
         sentences = raw_text.split(". ")
         current_chunk = []
@@ -132,7 +129,6 @@ def dynamic_token_chunker(raw_text: str, model_name: str = "gemini-2.5-flash", m
         for sentence in sentences:
             test_string = ". ".join(current_chunk + [sentence])
             
-            # Correct client-side API model call syntax standard
             response = client.models.count_tokens(
                 model=model_name,
                 contents=test_string,
@@ -146,4 +142,4 @@ def dynamic_token_chunker(raw_text: str, model_name: str = "gemini-2.5-flash", m
                 
         return ". ".join(current_chunk)
     except Exception:
-        return raw_text[:2000] # Safe fallback string escape block
+        return raw_text[:2000]
