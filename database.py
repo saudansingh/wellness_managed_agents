@@ -12,10 +12,10 @@ if DATABASE_URL and "sslmode" not in DATABASE_URL:
 _connection_pool = None
 
 def initialize_database():
-    """Creates the connection pool and the necessary tables if they don't exist."""
+    """Creates the connection pool and necessary tables if they do not exist."""
     global _connection_pool
     if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not set. Add your Neon connection string as an env var.")
+        raise RuntimeError("DATABASE_URL is not set. Add your Neon/Postgres connection string as an env var.")
 
     if _connection_pool is None:
         _connection_pool = psycopg2.pool.SimpleConnectionPool(1, 10, DATABASE_URL)
@@ -29,7 +29,7 @@ def initialize_database():
             injuries TEXT,
             goals TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+        );
         """,
         """
         CREATE TABLE IF NOT EXISTS weekly_plans (
@@ -41,7 +41,7 @@ def initialize_database():
             diet_plan TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, week_number)
-        )
+        );
         """,
         """
         CREATE TABLE IF NOT EXISTS conversation_messages (
@@ -50,7 +50,7 @@ def initialize_database():
             role TEXT NOT NULL,
             message TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+        );
         """
     )
     conn = None
@@ -69,8 +69,6 @@ def initialize_database():
             release_db_connection(conn)
 
 def get_db_connection():
-    """Borrows a connection from the pool instead of opening a fresh TCP/SSL
-    handshake every call — this is the main latency win for Neon."""
     if _connection_pool is None:
         raise RuntimeError("Connection pool not initialized. Call initialize_database() first.")
     return _connection_pool.getconn()
@@ -111,7 +109,7 @@ def get_user_profile_string(user_id: str) -> str:
         release_db_connection(conn)
 
     if not row:
-        return "No profile found for this User ID."
+        return "No profile registered yet."
 
     profile_str = (
         f"User ID: {user_id}\n"
@@ -123,7 +121,6 @@ def get_user_profile_string(user_id: str) -> str:
     return profile_str
 
 def save_weekly_plan(user_id: str, week_number: int, workout: str, yoga: str, diet: str):
-
     def clean_agent_output(output) -> str:
         if isinstance(output, list):
             extracted_chunks = []
@@ -141,9 +138,9 @@ def save_weekly_plan(user_id: str, week_number: int, workout: str, yoga: str, di
 
         return str(output) if output else ""
 
-    workout = clean_agent_output(workout)
-    yoga = clean_agent_output(yoga)
-    diet = clean_agent_output(diet)
+    workout_clean = clean_agent_output(workout)
+    yoga_clean = clean_agent_output(yoga)
+    diet_clean = clean_agent_output(diet)
 
     query = """
         INSERT INTO weekly_plans (user_id, week_number, workout_plan, yoga_plan, diet_plan)
@@ -157,7 +154,7 @@ def save_weekly_plan(user_id: str, week_number: int, workout: str, yoga: str, di
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        cur.execute(query, (user_id, week_number, workout, yoga, diet))
+        cur.execute(query, (user_id, week_number, workout_clean, yoga_clean, diet_clean))
         conn.commit()
         cur.close()
     finally:
