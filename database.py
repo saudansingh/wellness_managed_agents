@@ -15,7 +15,7 @@ def initialize_database():
     """Creates the connection pool and necessary tables if they do not exist."""
     global _connection_pool
     if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not set. Add your Neon/Postgres connection string as an env var.")
+        raise RuntimeError("DATABASE_URL is not set. Add your Neon connection string as an env var.")
 
     if _connection_pool is None:
         _connection_pool = psycopg2.pool.SimpleConnectionPool(1, 10, DATABASE_URL)
@@ -69,13 +69,32 @@ def initialize_database():
             release_db_connection(conn)
 
 def get_db_connection():
+    """
+    Borrows a connection from the pool and performs a quick liveness test.
+    If Neon dropped the idle SSL socket, it discards the dead connection and fetches a fresh one.
+    """
     if _connection_pool is None:
         raise RuntimeError("Connection pool not initialized. Call initialize_database() first.")
-    return _connection_pool.getconn()
+
+    conn = _connection_pool.getconn()
+    
+    # Liveness Check: verify connection is alive
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1;")
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        # Connection was closed by Neon due to idle timeout; discard and get a fresh connection
+        _connection_pool.putconn(conn, close=True)
+        conn = _connection_pool.getconn()
+
+    return conn
 
 def release_db_connection(conn):
     if _connection_pool is not None and conn is not None:
-        _connection_pool.putconn(conn)
+        try:
+            _connection_pool.putconn(conn)
+        except Exception:
+            pass
 
 def save_user_profile(user_id: str, age: int, weight: float, injuries: str, goals: str):
     query = """
