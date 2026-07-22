@@ -12,6 +12,12 @@ from agents import (
 )
 from database import get_user_profile_string, get_recent_history, save_chat_message
 
+# List of common casual greetings to bypass LLM classification latency
+FAST_GREETINGS = {
+    "hi", "hello", "hey", "good morning", "good evening", 
+    "good afternoon", "yo", "sup", "howdy", "hi there", "hello there"
+}
+
 # =========================================================
 # 1. State Definition
 # =========================================================
@@ -32,7 +38,6 @@ class WellnessState(TypedDict):
 # 2. Graph Node Functions
 # =========================================================
 def initialize_context_node(state: WellnessState) -> Dict[str, Any]:
-    """Loads profile context and recent dialogue history for the user."""
     profile = get_user_profile_string(state["user_id"])
     history = get_recent_history(state["user_id"], turns=6) or "No prior history"
     return {
@@ -45,26 +50,30 @@ def initialize_context_node(state: WellnessState) -> Dict[str, Any]:
 
 def intent_router_node(state: WellnessState) -> Dict[str, Any]:
     """
-    Analyzes user intent to determine whether to trigger specialized agents
-    or fall back to general conversation.
+    Analyzes user intent. Includes FAST-PATH to bypass LLM routing for 
+    simple greetings or ultra-short messages (saving ~2 seconds).
     """
     msg = state["user_message"].strip()
-    
-    prompt = f"""Analyze the user's message and categorize its primary intent into one or more of these labels:
-- 'trainer': Workout, lifting, strength, cardio, physical exercise, exercise form, or movement goals.
-- 'yogi': Yoga, flexibility, mobility, stretching, joint stiffness, or alignment.
-- 'dietitian': Nutrition, meals, diet, calories, macros, recipes, weight gain, or weight loss.
-- 'general': Greetings, general questions, non-wellness topics, coding, math, general science, or casual chat.
+    msg_clean = msg.lower().strip("!.,?")
+
+    # ⚡ FAST-PATH: Instant routing for greetings / short chat (0 ms latency cost)
+    if msg_clean in FAST_GREETINGS or len(msg_clean.split()) <= 2:
+        return {"required_agents": ["general"]}
+
+    prompt = f"""Analyze the user's message and categorize its intent into one or more labels:
+- 'trainer': Workout, exercises, lifting, physical activity, strength, or movement.
+- 'yogi': Yoga, flexibility, mobility, stretching, or joint pain.
+- 'dietitian': Nutrition, diet, meals, calories, macros, or recipes.
+- 'general': Greetings, casual chat, non-wellness topics, coding, math, general questions.
 
 User message: "{msg}"
 
-Respond with ONLY a comma-separated list of applicable labels (e.g., 'trainer, dietitian' or 'general')."""
+Respond with ONLY a comma-separated list of labels (e.g., 'trainer' or 'general')."""
 
     response = analytical_pro_model.invoke(prompt)
     raw_content = str(response.content).strip().lower().replace("`", "").replace('"', "").replace("'", "")
     
     parsed_labels = [label.strip() for label in raw_content.split(",") if label.strip()]
-    
     valid_specialists = {"trainer", "yogi", "dietitian"}
     selected_agents = [l for l in parsed_labels if l in valid_specialists]
     
@@ -96,7 +105,6 @@ def general_chat_node(state: WellnessState) -> Dict[str, Any]:
     return {"final_output": output}
 
 def compile_plan_node(state: WellnessState) -> Dict[str, Any]:
-    """Combines specialized outputs into a unified plan format."""
     sections = []
     if state.get("trainer_plan"):
         sections.append(f"### 🏋️ Workout Protocol\n{state['trainer_plan']}")
@@ -109,7 +117,6 @@ def compile_plan_node(state: WellnessState) -> Dict[str, Any]:
     return {"assembled_plan": compiled}
 
 def safety_audit_node(state: WellnessState) -> Dict[str, Any]:
-    """Audits generated wellness strategies against safety guidelines."""
     plan = state.get("assembled_plan", "")
     if not plan:
         return {"safety_status": "COMPLIANCE PASSED", "final_output": state.get("final_output", "")}
@@ -181,7 +188,7 @@ wellness_orchestrator = workflow.compile()
 def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
     cleaned_message = user_message.strip()
     if not cleaned_message:
-        return "I didn't receive a message. What would you like help with today?"
+        return "How can I help you today?"
 
     try:
         initial_inputs: WellnessState = {
@@ -199,7 +206,7 @@ def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
         }
 
         final_state = wellness_orchestrator.invoke(initial_inputs)
-        final_output = final_state.get("final_output", "I'm here to help with your workout, yoga, or nutrition goals!")
+        final_output = final_state.get("final_output", "How can I assist you with your fitness or nutrition?")
 
         save_chat_message(user_id, "user", cleaned_message)
         save_chat_message(user_id, "assistant", final_output)
@@ -208,4 +215,4 @@ def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
 
     except Exception as e:
         traceback.print_exc()
-        raise Exception(f"Orchestration failure during execution: {str(e)}")
+        raise Exception(f"Orchestration failure: {str(e)}")
