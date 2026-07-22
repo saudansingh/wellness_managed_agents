@@ -1,13 +1,13 @@
 import os
 from langchain_groq import ChatGroq
-from langchain_anthropic import ChatAnthropic
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
 
 from tools import search_youtube_videos, search_and_scrape_recipe
 
 # =========================================================
-# 1. Initialize Core Models
+# 1. Initialize Core Models (No Anthropic / Pure Gemini + Groq)
 # =========================================================
 specialist_flash_model = ChatGroq(
     model="llama-3.3-70b-versatile",
@@ -24,13 +24,14 @@ analytical_pro_model = ChatGroq(
     max_retries=1
 )
 
-if os.getenv("ANTHROPIC_API_KEY"):
-    conversational_model = ChatAnthropic(
-        model="claude-3-5-sonnet-20241022",
-        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+# Use Gemini 2.5 Flash for general chat if GOOGLE_API_KEY exists, otherwise fall back to Groq
+google_key = os.getenv("GOOGLE_API_KEY")
+if google_key and not google_key.startswith("YOUR_"):
+    conversational_model = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        google_api_key=google_key,
         temperature=0.7,
-        max_tokens=1000,
-        timeout=30
+        max_output_tokens=1000
     )
 else:
     conversational_model = ChatGroq(
