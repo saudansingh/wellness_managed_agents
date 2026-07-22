@@ -10,4 +10,5 @@ google-genai==0.3.0
 google-api-python-client==2.146.0
 beautifulsoup4==4.12.3
 requests==2.32.3
+langchain-anthropic
 psycopg2-binary==2.9.9
