@@ -1,355 +1,253 @@
-import re
-import random
-from typing import TypedDict, Union, Optional, List, Any
-from langgraph.graph import StateGraph, START, END
+import os
+from langchain_groq import ChatGroq
+from langchain_core.messages import ToolMessage
+from langchain_core.prompts import ChatPromptTemplate
 
-from agents import (
-    run_trainer_agent,
-    run_yogi_agent,
-    run_dietitian_agent,
-    run_safety_agent,
-    run_general_chat_agent,
-    analytical_pro_model
-)
-from database import (
-    get_user_profile_string,
-    get_last_week_number,
-    save_weekly_plan,
-    get_recent_history,
-    save_chat_message
+from tools import search_youtube_videos, search_and_scrape_recipe
+
+# =========================================================
+# 1. Initialize Core Models (100% Free via Groq)
+# =========================================================
+# Groq/Llama specialist model for workout, yoga, and nutrition generation
+specialist_flash_model = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    groq_api_key=os.getenv("GROQ_API_KEY"),
+    temperature=0.4,
+    max_retries=1,
+    timeout=30
 )
 
-# Canonical execution order for when more than one specialist is needed, so
-# later agents actually see earlier agents' real output instead of racing
-# them in parallel.
-AGENT_ORDER = ["trainer", "yogi", "dietitian"]
-
-# =========================================================
-# 1. Shared Graph State
-# =========================================================
-class WellnessState(TypedDict):
-    user_id: str
-    user_message: str
-    user_profile: Optional[str]
-    recent_history: Optional[str]
-
-    required_agents: List[str]
-    agent_queue: List[str]
-
-    workout_plan: Optional[str]
-    yoga_plan: Optional[str]
-    diet_plan: Optional[str]
-
-    safety_status: Optional[str]
-    final_output: Optional[str]
-
-    week_number: Optional[int]
-    _fast_route: Optional[str]
-
-# =========================================================
-# 2. Fast Router — pure Python, zero I/O
-# =========================================================
-# This is the ONLY thing that runs for every single message. It is a plain
-# regex/keyword classifier with no network calls (no LLM, no DB), so it
-# resolves in microseconds. It decides one of three paths:
-#   - "unsafe"       -> jailbreak/prompt-extraction attempt, canned refusal
-#   - "specialists"  -> clear fitness/yoga/nutrition request, keyword-matched
-#   - "chat"         -> everything else (greetings, small talk, off-topic,
-#                        vague messages, ambiguous wellness phrasing) -> one
-#                        adaptive LLM call in general_chat_node, no DB hit.
-
-GREETING_RE = re.compile(
-    r"^\s*(hi+|hello+|hey+|yo|sup|good\s?(morning|afternoon|evening)|"
-    r"what'?s up|howdy|namaste)\s*[!.,?]*\s*$",
-    re.IGNORECASE
+# Deterministic model for safety auditing and intent filtering
+analytical_pro_model = ChatGroq(
+    model="llama-3.3-70b-versatile",
+    groq_api_key=os.getenv("GROQ_API_KEY"),
+    temperature=0.0,
+    max_retries=1
 )
 
-UNSAFE_RE = re.compile(
-    r"(ignore (all|previous|above) instructions|disregard (all|previous|above)|"
-    r"system prompt|reveal.*(prompt|instructions)|jailbreak|api[\s_-]?key|"
-    r"you are now|pretend you are|dan mode)",
-    re.IGNORECASE
+# ⚡ FAST FREE CONVERSATIONAL MODEL (Replaced ChatAnthropic to avoid credit charges)
+conversational_model = ChatGroq(
+    model="llama-3.1-8b-instant",  # Ultra-fast, highly conversational & 100% free
+    groq_api_key=os.getenv("GROQ_API_KEY"),
+    temperature=0.7,
+    max_retries=1,
+    timeout=15
 )
 
-TRAINER_KW = {
-    "workout", "workouts", "exercise", "exercises", "gym", "muscle", "muscles",
-    "strength", "reps", "sets", "lift", "lifting", "cardio", "training",
-    "pushup", "push-up", "pushups", "squat", "squats", "deadlift", "fitness",
-    "bicep", "biceps", "abs", "core", "hiit"
-}
-YOGI_KW = {
-    "yoga", "stretch", "stretching", "flexibility", "asana", "pose", "poses",
-    "mobility", "meditation", "breathing", "pranayama", "spine", "posture"
-}
-DIET_KW = {
-    "diet", "food", "recipe", "recipes", "meal", "meals", "calorie", "calories",
-    "macro", "macros", "nutrition", "protein", "carb", "carbs", "eat", "eating",
-    "vegan", "vegetarian", "keto", "supplement", "supplements"
-}
-
-GREETING_REPLIES = [
-    "Hey there! 👋 Want help with a workout, yoga session, or your nutrition plan today?",
-    "Hi! What can I help you with — training, yoga, or diet?",
-    "Hello! I'm your wellness assistant. Fitness, yoga, or nutrition — where do we start?",
-]
-
-def fast_router_node(state: WellnessState) -> dict:
-    message = state["user_message"].strip()
-    lower = message.lower()
-
-    if UNSAFE_RE.search(lower):
-        return {"_fast_route": "unsafe"}
-
-    if GREETING_RE.match(lower):
-        return {"_fast_route": "chat_instant", "final_output": random.choice(GREETING_REPLIES)}
-
-    words = set(re.findall(r"[a-z]+", lower))
-    found = set()
-    if words & TRAINER_KW:
-        found.add("trainer")
-    if words & YOGI_KW:
-        found.add("yogi")
-    if words & DIET_KW:
-        found.add("dietitian")
-
-    if found:
-        required = [a for a in AGENT_ORDER if a in found]
-        return {"_fast_route": "specialists", "required_agents": required, "agent_queue": required.copy()}
-
-    # No keyword match, not a greeting, not unsafe -> anything else at all:
-    # small talk, vague replies, genuinely off-topic questions, or wellness
-    # phrasing that didn't hit a keyword. One adaptive LLM call handles all
-    # of it in general_chat_node, no DB round trip needed.
-    return {"_fast_route": "chat"}
+# =========================================================
+# 2. Output Cleaning Helper
+# =========================================================
+def parse_llm_output(raw_output) -> str:
+    if not raw_output:
+        return ""
+    if isinstance(raw_output, str):
+        return raw_output.strip()
+    if isinstance(raw_output, dict) and "output" in raw_output:
+        return str(raw_output["output"]).strip()
+    return str(raw_output)
 
 # =========================================================
-# 3. Graph Nodes
+# 3. System Prompts
+# =========================================================
+TRAINER_PROMPT = """You are an experienced strength coach talking directly to a client -- confident,
+direct, and genuinely invested in them getting this right, not reciting a form.
+
+If you don't know their training goal or equipment access, ask 1-2 sharp questions before planning
+anything. Don't guess.
+
+If you have what you need, cover: a quick read on their situation, 1-2 concrete exercises with real
+coaching cues (not just names), what to actively avoid, and video links only if you actually have them
+from a tool call. Let the length and shape follow the question -- a quick question gets a quick answer,
+a real programming request gets real depth. Never pad to hit a word count and never force a fixed
+number of sections if the question doesn't need them.
+
+Example of the tone to hit:
+"Your knee pain during lunges is almost always tracking, not strength -- the knee caving inward under
+load. Try reverse lunges instead of forward ones for now: they load the knee more vertically and are
+far more forgiving. Keep your front knee stacked over your ankle, not drifting past your toes. Skip
+box jumps and deep squats until this settles -- both load the knee at the worst angle for tracking
+issues."
+
+Never invent video links -- only include them if a tool call actually returned results."""
+
+YOGI_PROMPT = """You are a yoga and alignment teacher -- calm, precise, and speaking like someone who has
+actually taught thousands of bodies, not reciting a script.
+
+If you don't know what's tight, stiff, or painful, ask before sequencing anything.
+
+If you have what you need, cover: a brief physical read on what's likely going on, 1-2 specific poses
+with a real alignment cue each, and anything to protect against (usually the spine or the joint in
+question). Match your depth to the question -- don't force a fixed template onto a simple ask.
+
+Example of the tone to hit:
+"Tight hips after long sitting almost always means shortened hip flexors pulling on your lower back.
+Low lunge (Anjaneyasana) is the direct fix -- tuck your tailbone under as you sink forward so you feel
+the stretch in the front of the back hip, not just the knee. Avoid deep backbends until this loosens;
+they'll compensate through an already-tight lower back instead of the hip."
+
+Never invent video links -- only include them if a tool call actually returned results."""
+
+DIETITIAN_PROMPT = """You are a sports dietitian -- practical, evidence-based, and talking like a person
+who wants their client to actually succeed, not a nutrition textbook.
+
+If you don't know their dietary pattern (vegetarian/vegan/non-veg/etc.) or their goal (gain, cut,
+maintain), ask directly before building anything. One clear question beats a wrong assumption.
+
+If you have what you need, cover: the biochemical "why" in plain language, 1-2 concrete food/recipe
+options with the actual macro reasoning, and what to avoid. Match depth to the question -- "can I eat
+bananas on low-carb" deserves a direct answer, not a lecture on fruit biochemistry.
+
+Example of the tone to hit:
+"Bananas are fine on a moderate low-carb approach -- one medium banana is about 27g of carbs, mostly
+from natural sugar plus a solid 3g of fiber that slows the spike. If you're doing strict keto (under
+20g total carbs/day) it'll eat your whole budget in one shot, so save it for a pre-workout window
+instead of an anytime snack."
+
+Never invent recipe details -- only cite specifics if a tool call actually returned results."""
+
+SAFETY_PROMPT = """You are a realistic Health Safety Auditor.
+If the plan contains questions asking for more user information, or if it is compliant, output: COMPLIANCE PASSED.
+If there is a direct physical hazard, output: CRITICAL REJECTION followed by a short description."""
+
+# =========================================================
+# 4. Bind Tools to Models
+# =========================================================
+trainer_engine = specialist_flash_model.bind_tools([search_youtube_videos])
+yogi_engine = specialist_flash_model.bind_tools([search_youtube_videos])
+dietitian_engine = specialist_flash_model.bind_tools([search_and_scrape_recipe])
+
+trainer_prompt = ChatPromptTemplate.from_messages([
+    ("system", TRAINER_PROMPT),
+    ("human", "User Profile: {profile}\nUser Request: {user_message}")
+])
+
+yogi_prompt = ChatPromptTemplate.from_messages([
+    ("system", YOGI_PROMPT),
+    ("human", "User Profile: {profile}\nTrainer Context: {workout}\nUser Request: {user_message}")
+])
+
+dietitian_prompt = ChatPromptTemplate.from_messages([
+    ("system", DIETITIAN_PROMPT),
+    ("human", "User Profile: {profile}\nActivity Context: {workload}\nUser Request: {user_message}")
+])
+
+safety_prompt_template = ChatPromptTemplate.from_messages([
+    ("system", SAFETY_PROMPT),
+    ("human", "User Profile: {profile}\n\nGenerated Response:\n{plan}")
+])
+
+# =========================================================
+# 5. Agent Execution Interfaces
 # =========================================================
 
-def initialize_workflow_node(state: WellnessState) -> dict:
-    """Only reached by the 'specialists' path — general chat / greetings /
-    unsafe never touch the database at all."""
-    user_id = state["user_id"]
-    profile_str = get_user_profile_string(user_id)
-    current_max_week = get_last_week_number(user_id)
-    history_context = get_recent_history(user_id, turns=6) or ""
+def run_trainer_agent(user_profile: str, user_message: str) -> str:
+    msg_lower = user_message.lower()
+    if "video" in msg_lower or "watch" in msg_lower or "link" in msg_lower:
+        chain = trainer_prompt | trainer_engine
+        response = chain.invoke({"profile": user_profile, "user_message": user_message})
+        if response.tool_calls:
+            tool_call = response.tool_calls[0]
+            tool_output = search_youtube_videos.invoke(tool_call["args"])
+            final_prompt = ChatPromptTemplate.from_messages([
+                ("system", TRAINER_PROMPT),
+                ("human", "User Profile: {profile}\nUser Request: {user_message}"),
+                response,
+                ToolMessage(content=str(tool_output), tool_call_id=tool_call["id"])
+            ])
+            final_response = (final_prompt | specialist_flash_model).invoke({"profile": user_profile, "user_message": user_message})
+            return parse_llm_output(final_response.content)
+    else:
+        fast_chain = trainer_prompt | specialist_flash_model
+        response = fast_chain.invoke({"profile": user_profile, "user_message": user_message})
 
-    full_profile_context = profile_str
-    if history_context:
-        full_profile_context = f"{profile_str}\n\nRecent conversation:\n{history_context}"
+    return parse_llm_output(response.content)
 
-    return {
-        "user_profile": full_profile_context,
-        "recent_history": history_context,
-        "week_number": current_max_week + 1,
-        "workout_plan": "",
-        "yoga_plan": "",
-        "diet_plan": "",
-        "safety_status": "",
-        "final_output": ""
-    }
+def run_yogi_agent(user_profile: str, user_message: str, workout_plan: str) -> str:
+    msg_lower = user_message.lower()
+    if "video" in msg_lower or "routine" in msg_lower:
+        chain = yogi_prompt | yogi_engine
+        response = chain.invoke({"profile": user_profile, "user_message": user_message, "workout": workout_plan})
+        if response.tool_calls:
+            tool_call = response.tool_calls[0]
+            tool_output = search_youtube_videos.invoke(tool_call["args"])
+            final_prompt = ChatPromptTemplate.from_messages([
+                ("system", YOGI_PROMPT),
+                ("human", "User Profile: {profile}\nTrainer Context: {workout}\nUser Request: {user_message}"),
+                response,
+                ToolMessage(content=str(tool_output), tool_call_id=tool_call["id"])
+            ])
+            final_response = (final_prompt | specialist_flash_model).invoke({"profile": user_profile, "workout": workout_plan, "user_message": user_message})
+            return parse_llm_output(final_response.content)
+    else:
+        fast_chain = yogi_prompt | specialist_flash_model
+        response = fast_chain.invoke({"profile": user_profile, "workout": workout_plan, "user_message": user_message})
 
+    return parse_llm_output(response.content)
 
+def run_dietitian_agent(user_profile: str, user_message: str, workload: str) -> str:
+    msg_lower = user_message.lower()
+    is_missing_info = "veg" not in msg_lower and "meat" not in msg_lower and "gain" not in msg_lower and "lose" not in msg_lower
 
-def general_chat_node(state: WellnessState) -> dict:
-    """
-    Single adaptive handler for anything that isn't a clear specialist
-    request. Runs on the stronger conversational model (see agents.py) since
-    this is the majority of what users actually experience.
-    """
-    print("💬 [Agent] General Chat activated (Claude).")
-    response = run_general_chat_agent(
-        user_message=state["user_message"],
-        recent_history=state.get("recent_history", "")
+    if ("recipe" in msg_lower or "cook" in msg_lower or "eat" in msg_lower) and not is_missing_info:
+        chain = dietitian_prompt | dietitian_engine
+        response = chain.invoke({"profile": user_profile, "user_message": user_message, "workload": workload})
+        if response.tool_calls:
+            tool_call = response.tool_calls[0]
+            try:
+                tool_output = search_and_scrape_recipe.invoke(tool_call["args"])
+                if not tool_output or "Error" in str(tool_output):
+                    tool_output = "Provide a high-calorie nutrition structure focusing on complex carbs and lean proteins."
+                final_prompt = ChatPromptTemplate.from_messages([
+                    ("system", DIETITIAN_PROMPT),
+                    ("human", "User Profile: {profile}\nActivity Context: {workload}\nUser Request: {user_message}"),
+                    response,
+                    ToolMessage(content=str(tool_output), tool_call_id=tool_call["id"])
+                ])
+                final_response = (final_prompt | specialist_flash_model).invoke({"profile": user_profile, "workload": workload, "user_message": user_message})
+                return parse_llm_output(final_response.content)
+            except Exception:
+                pass
+
+    fallback_chain = dietitian_prompt | specialist_flash_model
+    final_response = fallback_chain.invoke({"profile": user_profile, "workload": workload, "user_message": user_message})
+    return parse_llm_output(final_response.content)
+
+def run_safety_agent(user_profile: str, complete_plan: str) -> str:
+    if "?" in complete_plan and len(complete_plan) < 250:
+        return "COMPLIANCE PASSED"
+
+    chain = safety_prompt_template | analytical_pro_model
+    response = chain.invoke({"profile": user_profile, "plan": complete_plan})
+    return parse_llm_output(response.content)
+
+# =========================================================
+# 6. General Conversation Agent (Runs on Groq 8B Instant - Free & Ultra Fast)
+# =========================================================
+GENERAL_CHAT_PROMPT = """You are the conversational voice of a wellness app -- covering fitness, yoga,
+and nutrition. You talk like a genuinely knowledgeable, warm person, not a scripted assistant.
+
+Scope: you only have real expertise in fitness, yoga, and nutrition. You don't have live access to
+anything else (news, weather, general trivia, coding help, etc).
+
+How to respond:
+- Greetings and small talk: reply like a person would, briefly and naturally.
+- A genuine question in your scope that doesn't need a full structured plan: just answer it well,
+  with real information, not a deflection. Match the length to the question.
+- A question outside your scope: say plainly that you're a wellness assistant and don't have access
+  to that, and suggest where they could actually find it. Keep it short and warm, not robotic.
+- Something vague: ask one natural follow-up instead of a generic "I didn't understand."
+- Never fabricate specific facts outside fitness/yoga/nutrition.
+
+Recent Chat History:
+{history}
+
+User's current message: "{message}"
+Response:"""
+
+def run_general_chat_agent(user_message: str, recent_history: str) -> str:
+    prompt = GENERAL_CHAT_PROMPT.format(
+        history=recent_history or "No prior history",
+        message=user_message
     )
-    return {"final_output": response}
-
-def safe_redirect_node(state: WellnessState) -> dict:
-    return {"final_output": "I can't override my safety instructions or share internal details, but I'm glad to help with your wellness goals."}
-
-def handle_no_profile_node(state: WellnessState) -> dict:
-    return {"final_output": (
-        "It looks like you haven't completed your profile setup yet — I need your age, weight, "
-        "and any injuries or goals to give you a safe, personalized plan. Please finish onboarding first!"
-    )}
-
-def trainer_node(state: WellnessState) -> dict:
-    print("🏋️ [Agent] Trainer activated.")
-    workout = run_trainer_agent(state["user_profile"], state["user_message"])
-    return {"workout_plan": workout, "agent_queue": state.get("agent_queue", [])[1:]}
-
-def yogi_node(state: WellnessState) -> dict:
-    print("🧘 [Agent] Yogi activated.")
-    workout_context = state.get("workout_plan") or "No workout context provided."
-    yoga = run_yogi_agent(state["user_profile"], state["user_message"], workout_context)
-    return {"yoga_plan": yoga, "agent_queue": state.get("agent_queue", [])[1:]}
-
-def dietitian_node(state: WellnessState) -> dict:
-    print("🥗 [Agent] Dietitian activated.")
-    workout_context = state.get("workout_plan") or "No workout planned."
-    yoga_context = state.get("yoga_plan") or "No yoga planned."
-    workload = f"Workout splits:\n{workout_context}\n\nYoga recovery:\n{yoga_context}"
-    diet = run_dietitian_agent(state["user_profile"], state["user_message"], workload)
-    return {"diet_plan": diet, "agent_queue": state.get("agent_queue", [])[1:]}
-
-def safety_audit_node(state: WellnessState) -> dict:
-    print("🛡️ [Agent] Safety Auditor evaluating plan safety parameters...")
-    combined_plan = "--- USER REQUEST RESPONSE ---\n\n"
-    if state.get("workout_plan"):
-        combined_plan += f"{state['workout_plan']}\n\n"
-    if state.get("yoga_plan"):
-        combined_plan += f"{state['yoga_plan']}\n\n"
-    if state.get("diet_plan"):
-        combined_plan += f"{state['diet_plan']}\n\n"
-
-    audit_result = run_safety_agent(state["user_profile"], combined_plan)
-    return {"safety_status": audit_result.strip()}
-
-def handle_medical_refusal_node(state: WellnessState) -> dict:
-    disclaimer = (
-        "### ⚠️ Strict Medical Notice\n"
-        "Based on your profile, I cannot safely answer this strategy request without increasing health risks.\n\n"
-        "Please consult a licensed physician before starting any training or diet adjustments."
-    )
-    return {"final_output": disclaimer}
-
-def finalize_and_save_node(state: WellnessState) -> dict:
-    complete_markdown_plan = ""
-    if state.get("workout_plan"):
-        complete_markdown_plan += f"{state['workout_plan']}\n\n"
-    if state.get("yoga_plan"):
-        complete_markdown_plan += f"{state['yoga_plan']}\n\n"
-    if state.get("diet_plan"):
-        complete_markdown_plan += f"{state['diet_plan']}\n\n"
-
-    if not complete_markdown_plan.strip():
-        complete_markdown_plan = "# Response\nI could not find a specific answer module for your request."
-
-    save_weekly_plan(
-        user_id=state.get("user_id", "default"),
-        week_number=state.get("week_number", 1),
-        workout=state.get("workout_plan"),
-        yoga=state.get("yoga_plan"),
-        diet=state.get("diet_plan")
-    )
-    return {"final_output": complete_markdown_plan.strip()}
-
-# =========================================================
-# 4. Conditional Routing
-# =========================================================
-
-def route_after_fast_router(state: WellnessState) -> str:
-    return state["_fast_route"]
-
-def route_after_profile_gate(state: WellnessState) -> str:
-    """Only specialist requests actually need a completed profile — chat/
-    greeting/unsafe never reach this gate at all (see the edge map below)."""
-    if "No profile found" in state.get("user_profile", ""):
-        return "handle_no_profile"
-    return state["agent_queue"][0]
-
-def route_next_agent(state: WellnessState) -> str:
-    queue = state.get("agent_queue", [])
-    if queue:
-        return queue[0]
-    return "safety_audit"
-
-def evaluate_safety_gate(state: WellnessState) -> str:
-    status = state.get("safety_status", "").upper()
-    if "CRITICAL REJECTION" in status:
-        return "handle_medical_refusal"
-    return "finalize_and_save"
-
-# =========================================================
-# 5. Compile the Graph
-# =========================================================
-workflow = StateGraph(WellnessState)
-
-workflow.add_node("fast_router", fast_router_node)
-workflow.add_node("initialize", initialize_workflow_node)
-
-workflow.add_node("handle_no_profile", handle_no_profile_node)
-workflow.add_node("trainer", trainer_node)
-workflow.add_node("yogi", yogi_node)
-workflow.add_node("dietitian", dietitian_node)
-workflow.add_node("safety_audit", safety_audit_node)
-workflow.add_node("handle_medical_refusal", handle_medical_refusal_node)
-workflow.add_node("general_chat", general_chat_node)
-workflow.add_node("safe_redirect", safe_redirect_node)
-workflow.add_node("finalize_and_save", finalize_and_save_node)
-
-workflow.add_edge(START, "fast_router")
-
-# The ONE routing decision, made with zero I/O. "specialists" is the only
-# branch that goes on to touch the database. "chat_instant" (pure greeting)
-# is already resolved with final_output set, so it goes straight to END.
-workflow.add_conditional_edges(
-    "fast_router",
-    route_after_fast_router,
-    {
-        "specialists": "initialize",
-        "chat": "general_chat",
-        "chat_instant": END,
-        "unsafe": "safe_redirect",
-    }
-)
-
-
-
-workflow.add_conditional_edges(
-    "initialize",
-    route_after_profile_gate,
-    {
-        "handle_no_profile": "handle_no_profile",
-        "trainer": "trainer",
-        "yogi": "yogi",
-        "dietitian": "dietitian",
-    }
-)
-
-# Sequential specialist chain: each agent hands off to the next required one
-# (or the safety audit), so later agents see real earlier output instead of
-# a placeholder string.
-agent_next_map = {"trainer": "trainer", "yogi": "yogi", "dietitian": "dietitian", "safety_audit": "safety_audit"}
-workflow.add_conditional_edges("trainer", route_next_agent, agent_next_map)
-workflow.add_conditional_edges("yogi", route_next_agent, agent_next_map)
-workflow.add_conditional_edges("dietitian", route_next_agent, agent_next_map)
-
-workflow.add_conditional_edges(
-    "safety_audit",
-    evaluate_safety_gate,
-    {
-        "handle_medical_refusal": "handle_medical_refusal",
-        "finalize_and_save": "finalize_and_save"
-    }
-)
-
-workflow.add_edge("handle_no_profile", END)
-workflow.add_edge("handle_medical_refusal", END)
-workflow.add_edge("finalize_and_save", END)
-workflow.add_edge("general_chat", END)
-workflow.add_edge("safe_redirect", END)
-
-wellness_orchestrator = workflow.compile()
-
-def execute_wellness_orchestration(user_id: str, user_message: str) -> str:
-    cleaned_message = user_message.strip()
-    if not cleaned_message:
-        return "I didn't receive any message — could you type your question?"
-
-    initial_inputs = {
-        "user_id": user_id,
-        "user_message": cleaned_message,
-        "required_agents": [],
-        "agent_queue": [],
-    }
-    final_state = wellness_orchestrator.invoke(initial_inputs)
-    final_output = final_state["final_output"]
-
-    # Chat history is only meaningful for logged, persistent conversations.
-    # Still logging every turn (including chat/greeting) keeps get_recent_history
-    # useful for future specialist calls in the same session.
-    save_chat_message(user_id, "user", cleaned_message)
-    save_chat_message(user_id, "assistant", final_output)
-
-    return final_output
+    response = conversational_model.invoke(prompt)
+    return parse_llm_output(response.content)
